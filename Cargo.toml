@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 actix-web = "4.12.1"
 reqwest = "0.12.25"
+serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
 tokio-macros = { version = "2.6.0" }
 
