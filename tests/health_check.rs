@@ -1,14 +1,14 @@
-use sqlx::{Connection, PgConnection};
+use sqlx::{Connection, PgConnection, PgPool};
 use std::net::TcpListener;
 use zero2prod::{configuration, startup};
 
 #[tokio::test]
 async fn test_health_check() {
-    let addr = spawn_app();
+    let test_app = spawn_app().await;
 
     let client = reqwest::Client::new();
 
-    let full_addr = format!("{addr}/health");
+    let full_addr = format!("{}/health", test_app.address);
     let response = client.get(full_addr).send().await.expect("should return");
 
     assert!(response.status().is_success());
@@ -17,11 +17,11 @@ async fn test_health_check() {
 
 #[tokio::test]
 async fn subscription_returns_400_for_invalid_form_data() {
-    let addr = spawn_app();
+    let test_app = spawn_app().await;
 
     let client = reqwest::Client::new();
 
-    let full_addr = format!("{addr}/subscriptions");
+    let full_addr = format!("{}/subscriptions", test_app.address);
 
     let test_cases = vec![
         ("name=jack%20cordery", "missing email"),
@@ -49,11 +49,8 @@ async fn subscription_returns_400_for_invalid_form_data() {
 
 #[tokio::test]
 async fn subscribe_returns_200_for_valid_form_data() {
-    let addr = spawn_app();
-    let full_addr = format!("{addr}/subscriptions");
-
-    let configuration = configuration::get_configuration().expect("Config should be provided");
-    let psql_connection_uri = configuration.database.get_connection_uri();
+    let test_app = spawn_app().await;
+    let full_addr = format!("{}/subscriptions", test_app.address);
 
     let client = reqwest::Client::new();
     let response = client
@@ -66,12 +63,8 @@ async fn subscribe_returns_200_for_valid_form_data() {
 
     assert_eq!(200, response.status().as_u16());
 
-    let mut connection = PgConnection::connect(&psql_connection_uri)
-        .await
-        .expect("Failed to connect to Postgres");
-
     let saved = sqlx::query!("SELECT email, name FROM subscriptions",)
-        .fetch_one(&mut connection)
+        .fetch_one(&test_app.connection_pool)
         .await
         .expect("Failed to query connection");
 
@@ -79,11 +72,24 @@ async fn subscribe_returns_200_for_valid_form_data() {
     assert_eq!(saved.name, "jack cordery");
 }
 
-fn spawn_app() -> String {
+pub struct TestApp {
+    pub address: String,
+    pub connection_pool: PgPool,
+}
+
+async fn spawn_app() -> TestApp {
     let addr = "127.0.0.1";
     let listener = TcpListener::bind(format!("{addr}:0")).expect("should bind");
     let port = listener.local_addr().expect("should be valid").port();
-    let server = startup::run(listener).expect("should spin up");
+    let configuration = configuration::get_configuration().expect("Config should be provided");
+    let psql_connection_uri = configuration.database.get_connection_uri();
+    let connection = PgPool::connect(&psql_connection_uri)
+        .await
+        .expect("Failed to connect to Postgres");
+    let server = startup::run(listener, connection.clone()).expect("should spin up");
     tokio::spawn(server);
-    format!("http://{addr}:{port}")
+    TestApp {
+        address: format!("http://{addr}:{port}"),
+        connection_pool: connection,
+    }
 }
