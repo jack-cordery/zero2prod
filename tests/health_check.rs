@@ -88,6 +88,7 @@ async fn spawn_app() -> TestApp {
 
     let mut configuration = get_configuration().expect("Failed to load configuration");
     configuration.database.database_name = Uuid::new_v4().to_string();
+    println!("{}", configuration.database.database_name);
     let connection_pool = configure_database(&configuration.database).await;
 
     let server = startup::run(listener, connection_pool.clone()).expect("should spin up");
@@ -99,8 +100,9 @@ async fn spawn_app() -> TestApp {
 }
 
 async fn configure_database(db_settings: &DatabaseSettings) -> PgPool {
-    let psql_connection_uri = db_settings.get_connection_uri_without_db_name();
-    let mut connection = PgConnection::connect(&psql_connection_uri)
+    let psql_connection_uri_without_db = db_settings.get_connection_uri_without_db_name();
+    let psql_connection_uri_with_db = db_settings.get_connection_uri();
+    let mut connection = PgConnection::connect(&psql_connection_uri_without_db)
         .await
         .expect("Failed to connect to Postgres");
 
@@ -109,7 +111,7 @@ async fn configure_database(db_settings: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failed to create database");
 
-    let connection_pool = PgPool::connect(&psql_connection_uri)
+    let connection_pool = PgPool::connect(&psql_connection_uri_with_db)
         .await
         .expect("Failed to connect to Postgres");
 
