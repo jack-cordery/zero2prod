@@ -7,6 +7,8 @@ edition = "2024"
 actix-web = "4.12.1"
 chrono = "0.4.42"
 config = "0.15.19"
+env_logger = "0.11.8"
+log = "0.4.29"
 reqwest = "0.12.25"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
