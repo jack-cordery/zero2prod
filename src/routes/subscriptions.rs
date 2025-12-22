@@ -1,6 +1,7 @@
 use actix_web::{HttpResponse, web};
 use chrono::Utc;
 use sqlx::PgPool;
+use tracing::{self, Instrument, Level, info_span};
 use uuid::Uuid;
 
 #[derive(serde::Deserialize)]
@@ -13,14 +14,22 @@ pub async fn subscriptions(
     connection: web::Data<PgPool>,
 ) -> HttpResponse {
     let request_id = Uuid::new_v4();
-    log::info!(
+    let request_span = info_span!("Adding a new subcriber.",
+        %request_id,
+        subscriber_email = %form.email,
+        subscriber_name = %form.name,
+    );
+
+    let _request_span_guard = request_span.enter(); // Shouldnt be done in async TODO: Change! 
+    tracing::info!(
         "request_id {} - Adding new subscriber {} {}",
         request_id,
         form.name,
         form.email
     );
 
-    log::info!("request_id {} - Saving subscriber to the DB", request_id);
+    let query_span = tracing::info_span!("Saving subscriber to the DB");
+
     match sqlx::query!(
         r#"
 INSERT INTO subscriptions (id, email, name, subscribed_at) VALUES ($1, $2, $3, $4)
@@ -31,17 +40,18 @@ INSERT INTO subscriptions (id, email, name, subscribed_at) VALUES ($1, $2, $3, $
         Utc::now()
     )
     .execute(connection.get_ref())
+    .instrument(query_span)
     .await
     {
         Ok(_) => {
-            log::info!(
+            tracing::info!(
                 "request_id {} - New subscription successfully added!",
                 request_id
             );
             HttpResponse::Ok().finish()
         }
         Err(e) => {
-            log::error!("request_id {} - Failed to execute query: {e:?}", request_id);
+            tracing::error!("request_id {} - Failed to execute query: {e:?}", request_id);
             HttpResponse::InternalServerError().finish()
         }
     }
