@@ -27,7 +27,7 @@ async fn subscription_returns_400_for_invalid_form_data() {
 
     let client = reqwest::Client::new();
 
-    let full_addr = format!("{}/subscriptions", test_app.address);
+    let full_addr = format!("{}/subscribe", test_app.address);
 
     let test_cases = vec![
         ("name=jack%20cordery", "missing email"),
@@ -56,7 +56,7 @@ async fn subscription_returns_400_for_invalid_form_data() {
 #[tokio::test]
 async fn subscribe_returns_200_for_valid_form_data() {
     let test_app = spawn_app().await;
-    let full_addr = format!("{}/subscriptions", test_app.address);
+    let full_addr = format!("{}/subscribe", test_app.address);
 
     let client = reqwest::Client::new();
     let response = client
