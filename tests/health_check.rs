@@ -5,7 +5,7 @@ use uuid::Uuid;
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
     startup,
-    telementry::{get_subsriber, init_subscriber},
+    telementry::{get_subscriber, init_subscriber},
 };
 
 #[tokio::test]
@@ -79,8 +79,16 @@ async fn subscribe_returns_200_for_valid_form_data() {
 }
 
 static TRACING: LazyLock<()> = LazyLock::new(|| {
-    let subscriber = get_subsriber("test", "info");
-    init_subscriber(subscriber);
+    let default_name = "test".to_string();
+    let default_level = "info".to_string();
+
+    if std::env::var("TEST_LOG").is_ok() {
+        let subscriber = get_subscriber(default_name, default_level, std::io::stdout);
+        init_subscriber(subscriber);
+    } else {
+        let subscriber = get_subscriber(default_name, default_level, std::io::sink);
+        init_subscriber(subscriber);
+    }
 });
 
 pub struct TestApp {

@@ -3,12 +3,12 @@ use std::{io::Result, net::TcpListener};
 use zero2prod::{
     configuration::get_configuration,
     startup,
-    telementry::{get_subsriber, init_subscriber},
+    telementry::{get_subscriber, init_subscriber},
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let subscriber = get_subsriber("zero2prod", "info");
+    let subscriber = get_subscriber("zero2prod".into(), "info".into(), std::io::stdout);
 
     init_subscriber(subscriber);
 
