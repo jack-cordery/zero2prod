@@ -1,9 +1,11 @@
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
+use std::sync::LazyLock;
 use uuid::Uuid;
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
     startup,
+    telementry::{get_subsriber, init_subscriber},
 };
 
 #[tokio::test]
@@ -76,12 +78,19 @@ async fn subscribe_returns_200_for_valid_form_data() {
     assert_eq!(saved.name, "jack cordery");
 }
 
+static TRACING: LazyLock<()> = LazyLock::new(|| {
+    let subscriber = get_subsriber("test", "info");
+    init_subscriber(subscriber);
+});
+
 pub struct TestApp {
     pub address: String,
     pub connection_pool: PgPool,
 }
 
 async fn spawn_app() -> TestApp {
+    LazyLock::force(&TRACING);
+
     let addr = "127.0.0.1";
     let listener = TcpListener::bind(format!("{addr}:0")).expect("should bind");
     let port = listener.local_addr().expect("should be valid").port();
