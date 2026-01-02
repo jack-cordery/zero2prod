@@ -1,3 +1,4 @@
+use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
 use std::sync::LazyLock;
@@ -119,7 +120,7 @@ async fn spawn_app() -> TestApp {
 async fn configure_database(db_settings: &DatabaseSettings) -> PgPool {
     let psql_connection_uri_without_db = db_settings.get_connection_uri_without_db_name();
     let psql_connection_uri_with_db = db_settings.get_connection_uri();
-    let mut connection = PgConnection::connect(&psql_connection_uri_without_db)
+    let mut connection = PgConnection::connect(psql_connection_uri_without_db.expose_secret())
         .await
         .expect("Failed to connect to Postgres");
 
@@ -128,7 +129,7 @@ async fn configure_database(db_settings: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failed to create database");
 
-    let connection_pool = PgPool::connect(&psql_connection_uri_with_db)
+    let connection_pool = PgPool::connect(psql_connection_uri_with_db.expose_secret())
         .await
         .expect("Failed to connect to Postgres");
 
