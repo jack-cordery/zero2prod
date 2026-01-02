@@ -13,6 +13,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
 tokio-macros = { version = "2.6.0" }
 tracing = { version = "0.1.44", features = ["log"] }
+tracing-actix-web = "0.7.20"
 tracing-bunyan-formatter = "0.3.10"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.22", features = ["registry", "env-filter"] }

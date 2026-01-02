@@ -10,7 +10,7 @@ pub struct FormData {
     name: String,
 }
 
-#[instrument(name = "Adding a new subscriber", skip(form, connection), fields(request_id = %Uuid::new_v4(), subscriber_email = %form.email, subscriber_name = %form.name))]
+#[instrument(name = "Adding a new subscriber", skip(form, connection), fields(subscriber_email = %form.email, subscriber_name = %form.name))]
 pub async fn subscribe(form: web::Form<FormData>, connection: web::Data<PgPool>) -> HttpResponse {
     match insert_subscriber(&connection, &form).await {
         Ok(_) => HttpResponse::Ok().finish(),
