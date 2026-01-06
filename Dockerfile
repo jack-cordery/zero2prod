@@ -11,3 +11,5 @@ ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 ENTRYPOINT ["./target/release/zero2prod"]
+
+EXPOSE 8000
