@@ -1,14 +1,19 @@
-FROM rust:1.92 AS builder
-WORKDIR /usr/src/myapp
+FROM rust:1.92-bookworm AS builder
+WORKDIR /app
 COPY . .
 RUN apt update && apt install lld clang -y
 ENV SQLX_OFFLINE=true
-RUN cargo install --path .
+RUN cargo build --release 
 
-FROM rust:1.92-slim
-RUN apt-get update && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /usr/local/cargo/bin/zero2prod /usr/local/bin/zero2prod
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && apt-get autoremove -y \
+    && apt-get clean -y \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/zero2prod zero2prod
 COPY configuration configuration
 ENV APP_ENVIRONMENT=production
-CMD ["zero2prod"]
+ENTRYPOINT ["./zero2prod"]
 EXPOSE 8000
