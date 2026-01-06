@@ -1,3 +1,5 @@
+use std::env;
+
 use config::Config;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -53,8 +55,46 @@ impl DatabaseSettings {
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
+    let base_path = env::current_dir().expect("Failed to determine cd");
+    let configuration_path = base_path.join("configuration");
+
+    let environment: Environment = env::var("APP_ENVIRONMENT")
+        .unwrap_or("local".into())
+        .try_into()
+        .expect("Failed to parse APP_ENVIRONMENT");
     let settings = Config::builder()
-        .add_source(config::File::with_name("configuration"))
+        .add_source(config::File::from(configuration_path.join("base")))
+        .add_source(config::File::from(
+            configuration_path.join(environment.as_str()),
+        ))
         .build()?;
     settings.try_deserialize::<Settings>()
+}
+
+pub enum Environment {
+    Local,
+    Production,
+}
+
+impl TryFrom<String> for Environment {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        match s.to_lowercase().as_str() {
+            "local" => Ok(Self::Local),
+            "production" => Ok(Self::Production),
+            _ => Err(format!(
+                "{s} is not a valid enviroment. Please use either `local` or `production`."
+            )),
+        }
+    }
+}
+
+impl Environment {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Local => "local",
+            Self::Production => "production",
+        }
+    }
 }
