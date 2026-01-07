@@ -4,6 +4,8 @@ use config::Config;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
+use serde_aux::field_attributes::deserialize_number_from_string;
+
 #[derive(Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
@@ -13,6 +15,7 @@ pub struct Settings {
 #[derive(Deserialize)]
 pub struct ApplicationSettings {
     pub host: String,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
 }
 
@@ -21,6 +24,7 @@ pub struct DatabaseSettings {
     pub username: String,
     pub password: SecretString,
     pub database_name: String,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
 }
@@ -67,6 +71,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
         .add_source(config::File::from(
             configuration_path.join(environment.as_str()),
         ))
+        .add_source(config::Environment::with_prefix("app").separator("__"))
         .build()?;
     settings.try_deserialize::<Settings>()
 }
