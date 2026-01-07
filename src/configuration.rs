@@ -5,6 +5,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 use serde_aux::field_attributes::deserialize_number_from_string;
+use sqlx::ConnectOptions;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 #[derive(Deserialize)]
@@ -35,6 +36,7 @@ impl DatabaseSettings {
     pub fn get_connection_uri(&self) -> PgConnectOptions {
         self.get_connection_uri_without_db_name()
             .database(&self.database_name)
+            .log_statements(tracing::log::LevelFilter::Trace)
     }
 
     pub fn get_connection_uri_without_db_name(&self) -> PgConnectOptions {
