@@ -20,8 +20,6 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind(application_address)?;
 
     let psql_connection_uri = configuration.database.get_connection_uri();
-    let connection = PgPoolOptions::new()
-        .acquire_timeout(std::time::Duration::from_secs(2))
-        .connect_lazy_with(psql_connection_uri);
+    let connection = PgPoolOptions::new().connect_lazy_with(psql_connection_uri);
     startup::run(listener, connection)?.await
 }
