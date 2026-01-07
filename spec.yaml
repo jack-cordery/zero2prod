@@ -6,7 +6,7 @@ name: zero2prod
 # https://www.digitalocean.com/docs/platform/availability-matrix/
 # They must specified lowercased.
 # `fra` stands for Frankfurt (Germany - EU)
-region: fra
+region: lon1
 services:
   - name: zero2prod
     # Relative to the repository root
