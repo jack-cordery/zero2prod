@@ -18,5 +18,6 @@ FROM debian:trixie-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/target/release/zero2prod /usr/local/bin
 COPY configuration configuration
+ENV APP_ENVIRONMENT=PRODUCTION
 ENTRYPOINT ["/usr/local/bin/zero2prod"]
 EXPOSE 8000
