@@ -78,6 +78,44 @@ async fn subscribe_returns_200_for_valid_form_data() {
     assert_eq!(saved.name, "jack cordery");
 }
 
+#[tokio::test]
+async fn subscribe_returns_400_for_invalid_or_missing_data() {
+    let test_app = spawn_app().await;
+    let full_addr = format!("{}/subscribe", test_app.address);
+
+    let test_tupes = [
+        ("name=&email=some@email.com", "missing name"),
+        ("name=some%20name&email=", "missing email"),
+        ("name=some%20name&email=notanemail", "invalid email"),
+    ];
+
+    for (test_input, test_name) in test_tupes {
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&full_addr)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(test_input)
+            .send()
+            .await
+            .expect("should return");
+
+        assert_eq!(
+            400,
+            response.status().as_u16(),
+            "The api failed to return 400 when testing {test_name}"
+        );
+
+        let saved = sqlx::query!("SELECT email, name FROM subscriptions",)
+            .fetch_one(&test_app.connection_pool)
+            .await;
+
+        assert!(
+            matches!(saved, Err(sqlx::Error::RowNotFound)),
+            "The api failed by returning rows that should not have been writtten to DB in test: {test_name}"
+        );
+    }
+}
+
 static TRACING: LazyLock<()> = LazyLock::new(|| {
     let default_name = "test".to_string();
     let default_level = "info".to_string();
