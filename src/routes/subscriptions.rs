@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpResponse, error::ErrorInternalServerError, web};
 use chrono::Utc;
 use sqlx::PgPool;
 use tracing::{self, instrument};
@@ -14,8 +14,12 @@ pub struct FormData {
 
 #[instrument(name = "Adding a new subscriber", skip(form, connection), fields(subscriber_email = %form.email, subscriber_name = %form.name))]
 pub async fn subscribe(form: web::Form<FormData>, connection: web::Data<PgPool>) -> HttpResponse {
+    let name = match SubscriberName::parse(form.0.name) {
+        Ok(name) => name,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
     let new_subscriber = NewSubcsriber {
-        name: SubscriberName::parse(form.0.name).expect("Failed to parse string."),
+        name,
         email: form.0.email,
     };
     match insert_subscriber(&connection, &new_subscriber).await {
