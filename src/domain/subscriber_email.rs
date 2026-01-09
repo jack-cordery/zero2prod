@@ -21,15 +21,29 @@ impl AsRef<str> for SubscriberEmail {
 
 #[cfg(test)]
 mod test {
-    use claim::{assert_err, assert_ok};
+    use claim::assert_err;
+    use fake::{Fake, faker::internet::en::SafeEmail};
+    use quickcheck::Arbitrary;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     use super::*;
 
-    #[test]
-    fn parse_returns_email_given_valid_email() {
-        let email = SubscriberEmail::parse("jack@gmail.com".to_string());
-        assert_ok!(&email);
-        assert_eq!("jack@gmail.com", email.unwrap().as_ref());
+    #[derive(Debug, Clone)]
+    struct SubscriberEmailFixture(pub String);
+
+    impl Arbitrary for SubscriberEmailFixture {
+        fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+            let mut rng = StdRng::seed_from_u64(u64::arbitrary(g));
+            let email = SafeEmail().fake_with_rng(&mut rng);
+            Self(email)
+        }
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn parse_returns_email_given_valid_email(email: SubscriberEmailFixture) -> bool {
+        let subscriber_email = SubscriberEmail::parse(email.0.clone());
+        subscriber_email.is_ok()
     }
 
     #[test]
