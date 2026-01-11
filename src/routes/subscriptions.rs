@@ -4,7 +4,19 @@ use sqlx::PgPool;
 use tracing::{self, instrument};
 use uuid::Uuid;
 
-use crate::domain::{NewSubcsriber, SubscriberEmail, SubscriberName};
+use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
+
+impl TryFrom<FormData> for NewSubscriber {
+    type Error = String;
+
+    fn try_from(form: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(form.name)?;
+        let email = SubscriberEmail::parse(form.email)?;
+
+        let new_subscriber = NewSubscriber { name, email };
+        Ok(new_subscriber)
+    }
+}
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -14,16 +26,10 @@ pub struct FormData {
 
 #[instrument(name = "Adding a new subscriber", skip(form, connection), fields(subscriber_email = %form.email, subscriber_name = %form.name))]
 pub async fn subscribe(form: web::Form<FormData>, connection: web::Data<PgPool>) -> HttpResponse {
-    let name = match SubscriberName::parse(form.0.name) {
-        Ok(name) => name,
+    let new_subscriber: NewSubscriber = match form.0.try_into() {
+        Ok(new_subcriber) => new_subcriber,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
-    let email = match SubscriberEmail::parse(form.0.email) {
-        Ok(email) => email,
-        Err(_) => return HttpResponse::BadRequest().finish(),
-    };
-
-    let new_subscriber = NewSubcsriber { name, email };
     match insert_subscriber(&connection, &new_subscriber).await {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish(),
@@ -36,7 +42,7 @@ pub async fn subscribe(form: web::Form<FormData>, connection: web::Data<PgPool>)
 )]
 pub async fn insert_subscriber(
     connection: &PgPool,
-    new_subsriber: &NewSubcsriber,
+    new_subsriber: &NewSubscriber,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
