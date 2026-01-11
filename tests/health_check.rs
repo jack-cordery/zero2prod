@@ -1,9 +1,11 @@
+use reqwest::Client;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
 use std::sync::LazyLock;
 use uuid::Uuid;
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
+    email_client::EmailClient,
     startup,
     telementry::{get_subscriber, init_subscriber},
 };
@@ -146,7 +148,19 @@ async fn spawn_app() -> TestApp {
     println!("{}", configuration.database.database_name);
     let connection_pool = configure_database(&configuration.database).await;
 
-    let server = startup::run(listener, connection_pool.clone()).expect("should spin up");
+    let reqwest_client = Client::new();
+    let sender_email = configuration
+        .email_client
+        .sender()
+        .expect("Invalid sender email in configuration");
+    let email_client = EmailClient::new(
+        reqwest_client,
+        configuration.email_client.base_url,
+        sender_email,
+    );
+
+    let server =
+        startup::run(listener, connection_pool.clone(), email_client).expect("should spin up");
     tokio::spawn(server);
     TestApp {
         address: format!("http://{addr}:{port}"),
