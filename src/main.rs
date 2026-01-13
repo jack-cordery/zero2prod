@@ -1,6 +1,6 @@
-use reqwest::Client;
 use sqlx::postgres::PgPoolOptions;
 use std::{io::Result, net::TcpListener};
+use url::Url;
 use zero2prod::{
     configuration::get_configuration,
     email_client::EmailClient,
@@ -24,15 +24,16 @@ async fn main() -> Result<()> {
     let psql_connection_uri = configuration.database.get_connection_uri();
     let connection = PgPoolOptions::new().connect_lazy_with(psql_connection_uri);
 
-    let reqwest_client = Client::new();
     let sender_email = configuration
         .email_client
         .sender()
         .expect("Invalid sender email in configuration");
+    let base_url =
+        Url::parse(&configuration.email_client.base_url).expect("Invalid url in configuration");
     let email_client = EmailClient::new(
-        reqwest_client,
-        configuration.email_client.base_url,
+        base_url,
         sender_email,
+        configuration.email_client.authorization_token,
     );
 
     startup::run(listener, connection, email_client)?.await

@@ -1,7 +1,9 @@
-use reqwest::Client;
+use fake::{Fake, Faker};
+use secrecy::SecretString;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
 use std::sync::LazyLock;
+use url::Url;
 use uuid::Uuid;
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
@@ -148,15 +150,17 @@ async fn spawn_app() -> TestApp {
     println!("{}", configuration.database.database_name);
     let connection_pool = configure_database(&configuration.database).await;
 
-    let reqwest_client = Client::new();
     let sender_email = configuration
         .email_client
         .sender()
         .expect("Invalid sender email in configuration");
+    let base_url =
+        Url::parse(&configuration.email_client.base_url).expect("Invalid url in configuration");
+    let fake_auth_token: String = Faker.fake();
     let email_client = EmailClient::new(
-        reqwest_client,
-        configuration.email_client.base_url,
+        base_url,
         sender_email,
+        SecretString::new(fake_auth_token.into()),
     );
 
     let server =

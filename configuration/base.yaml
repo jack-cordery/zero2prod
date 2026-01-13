@@ -6,3 +6,5 @@ database:
   host: 127.0.0.1
 application:
   port: 8000
+email_client: 
+  authorization_token: "my-secret-token"
