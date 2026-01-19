@@ -8,7 +8,7 @@ use uuid::Uuid;
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
     email_client::EmailClient,
-    startup,
+    startup::{self, Application, get_connection_pool},
     telementry::{get_subscriber, init_subscriber},
 };
 
@@ -33,35 +33,27 @@ pub struct TestApp {
 pub async fn spawn_app() -> TestApp {
     LazyLock::force(&TRACING);
 
-    let addr = "127.0.0.1";
-    let listener = TcpListener::bind(format!("{addr}:0")).expect("should bind");
-    let port = listener.local_addr().expect("should be valid").port();
-
     let mut configuration = get_configuration().expect("Failed to load configuration");
-    configuration.database.database_name = Uuid::new_v4().to_string();
-    println!("{}", configuration.database.database_name);
-    let connection_pool = configure_database(&configuration.database).await;
+    let configuration = {
+        let mut c = get_configuration().expect("Failed to read configuration");
+        c.database.database_name = Uuid::new_v4().to_string();
+        c.application.port = 0;
+        c
+    };
 
-    let sender_email = configuration
-        .email_client
-        .sender()
-        .expect("Invalid sender email in configuration");
-    let base_url =
-        Url::parse(&configuration.email_client.base_url).expect("Invalid url in configuration");
-    let fake_auth_token: String = Faker.fake();
-    let timeout_duration = configuration.email_client.timeout();
-    let email_client = EmailClient::new(
-        base_url,
-        sender_email,
-        SecretString::new(fake_auth_token.into()),
-        timeout_duration,
-    );
+    let _ = configure_database(&configuration.database).await;
 
-    let server =
-        startup::run(listener, connection_pool.clone(), email_client).expect("should spin up");
-    tokio::spawn(server);
+    let application = Application::build(&configuration)
+        .await
+        .expect("Failed to build application");
+
+    let connection_pool = get_connection_pool(&configuration.database);
+    let address = format!("http://127.0.0.1:{}", application.port());
+
+    tokio::spawn(application.run_until_stopped());
+
     TestApp {
-        address: format!("http://{addr}:{port}"),
+        address,
         connection_pool,
     }
 }
