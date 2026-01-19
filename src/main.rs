@@ -28,12 +28,14 @@ async fn main() -> Result<()> {
         .email_client
         .sender()
         .expect("Invalid sender email in configuration");
+    let timeout = configuration.email_client.timeout();
     let base_url =
         Url::parse(&configuration.email_client.base_url).expect("Invalid url in configuration");
     let email_client = EmailClient::new(
         base_url,
         sender_email,
         configuration.email_client.authorization_token,
+        timeout,
     );
 
     startup::run(listener, connection, email_client)?.await

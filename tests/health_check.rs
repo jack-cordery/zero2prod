@@ -157,10 +157,12 @@ async fn spawn_app() -> TestApp {
     let base_url =
         Url::parse(&configuration.email_client.base_url).expect("Invalid url in configuration");
     let fake_auth_token: String = Faker.fake();
+    let timeout_duration = configuration.email_client.timeout();
     let email_client = EmailClient::new(
         base_url,
         sender_email,
         SecretString::new(fake_auth_token.into()),
+        timeout_duration,
     );
 
     let server =

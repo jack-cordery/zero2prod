@@ -22,9 +22,14 @@ pub struct EmailClient {
 }
 
 impl EmailClient {
-    pub fn new(base_url: Url, sender: SubscriberEmail, authorization_token: SecretString) -> Self {
+    pub fn new(
+        base_url: Url,
+        sender: SubscriberEmail,
+        authorization_token: SecretString,
+        timeout_duration: std::time::Duration,
+    ) -> Self {
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(timeout_duration)
             .build()
             .expect("Failed to build cient");
         Self {
@@ -129,7 +134,12 @@ mod test {
     fn email_client(base_url: &str) -> EmailClient {
         let mock_url = Url::parse(base_url).expect("Failed to convert mock server to Url");
         let fake_auth_token: String = Faker.fake();
-        EmailClient::new(mock_url, email(), fake_auth_token.into())
+        EmailClient::new(
+            mock_url,
+            email(),
+            fake_auth_token.into(),
+            std::time::Duration::from_millis(200),
+        )
     }
 
     #[tokio::test]
