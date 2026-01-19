@@ -114,6 +114,24 @@ mod test {
         }
     }
 
+    fn email() -> SubscriberEmail {
+        SubscriberEmail::parse(SafeEmail().fake()).unwrap()
+    }
+
+    fn subject() -> String {
+        Sentence(1..2).fake()
+    }
+
+    fn content() -> String {
+        Paragraph(1..10).fake()
+    }
+
+    fn email_client(base_url: &str) -> EmailClient {
+        let mock_url = Url::parse(base_url).expect("Failed to convert mock server to Url");
+        let fake_auth_token: String = Faker.fake();
+        EmailClient::new(mock_url, email(), fake_auth_token.into())
+    }
+
     #[tokio::test]
     async fn send_email_sends_the_expected_request() {
         let mock_server = MockServer::start().await;
@@ -127,17 +145,10 @@ mod test {
 
         // so now i want to create an email client and call send
         //
-        let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
-        let subject: String = Sentence(1..2).fake();
-        let content: String = Paragraph(1..10).fake();
-        let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
 
-        let mock_url =
-            Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
-        let fake_auth_token: String = Faker.fake();
-        let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
+        let email_client = email_client(&mock_server.uri());
         let _ = email_client
-            .send_email(subscriber_email, &subject, &content, &content)
+            .send_email(email(), &subject(), &content(), &content())
             .await;
         // Assert
         // Mock expectations are checked on drop
@@ -152,17 +163,9 @@ mod test {
             .mount(&mock_server)
             .await;
 
-        let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
-        let subject: String = Sentence(1..2).fake();
-        let content: String = Paragraph(1..10).fake();
-        let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
-
-        let mock_url =
-            Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
-        let fake_auth_token: String = Faker.fake();
-        let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
+        let email_client = email_client(&mock_server.uri());
         let response = email_client
-            .send_email(subscriber_email, &subject, &content, &content)
+            .send_email(email(), &subject(), &content(), &content())
             .await;
         assert_ok!(response);
     }
@@ -176,17 +179,9 @@ mod test {
             .mount(&mock_server)
             .await;
 
-        let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
-        let subject: String = Sentence(1..2).fake();
-        let content: String = Paragraph(1..10).fake();
-        let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
-
-        let mock_url =
-            Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
-        let fake_auth_token: String = Faker.fake();
-        let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
+        let email_client = email_client(&mock_server.uri());
         let response = email_client
-            .send_email(subscriber_email, &subject, &content, &content)
+            .send_email(email(), &subject(), &content(), &content())
             .await;
         assert_err!(response);
     }
@@ -201,17 +196,9 @@ mod test {
             .mount(&mock_server)
             .await;
 
-        let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
-        let subject: String = Sentence(1..2).fake();
-        let content: String = Paragraph(1..10).fake();
-        let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
-
-        let mock_url =
-            Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
-        let fake_auth_token: String = Faker.fake();
-        let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
+        let email_client = email_client(&mock_server.uri());
         let response = email_client
-            .send_email(subscriber_email, &subject, &content, &content)
+            .send_email(email(), &subject(), &content(), &content())
             .await;
         assert_err!(response);
     }
