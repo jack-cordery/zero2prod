@@ -74,6 +74,7 @@ struct SendEmailRequest<'a> {
 
 #[cfg(test)]
 mod test {
+    use claim::assert_ok;
     use fake::{
         Fake, Faker,
         faker::{
@@ -83,7 +84,7 @@ mod test {
     };
     use wiremock::{
         Mock, MockServer, Request, ResponseTemplate,
-        matchers::{header, header_exists},
+        matchers::{any, header, header_exists},
     };
 
     use super::*;
@@ -127,7 +128,6 @@ mod test {
 
         let mock_url =
             Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
-
         let fake_auth_token: String = Faker.fake();
         let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
         let _ = email_client
@@ -135,5 +135,32 @@ mod test {
             .await;
         // Assert
         // Mock expectations are checked on drop
+    }
+
+    #[tokio::test]
+    async fn send_email_succeeds_if_server_returns_200() {
+        // ok so here we will want to set up the server
+        // and then test that given the server returning
+        // 200 that our send_email method rerturns Result::ok
+        let mock_server = MockServer::builder().start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
+        let subject: String = Sentence(1..2).fake();
+        let content: String = Paragraph(1..10).fake();
+        let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
+
+        let mock_url =
+            Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
+        let fake_auth_token: String = Faker.fake();
+        let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
+        let response = email_client
+            .send_email(subscriber_email, &subject, &content, &content)
+            .await;
+        assert_ok!(response);
     }
 }
