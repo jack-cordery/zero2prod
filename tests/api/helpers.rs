@@ -1,14 +1,9 @@
-use fake::{Fake, Faker};
-use secrecy::SecretString;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::net::TcpListener;
 use std::sync::LazyLock;
-use url::Url;
 use uuid::Uuid;
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
-    email_client::EmailClient,
-    startup::{self, Application, get_connection_pool},
+    startup::{Application, get_connection_pool},
     telementry::{get_subscriber, init_subscriber},
 };
 
@@ -33,7 +28,6 @@ pub struct TestApp {
 pub async fn spawn_app() -> TestApp {
     LazyLock::force(&TRACING);
 
-    let mut configuration = get_configuration().expect("Failed to load configuration");
     let configuration = {
         let mut c = get_configuration().expect("Failed to read configuration");
         c.database.database_name = Uuid::new_v4().to_string();
