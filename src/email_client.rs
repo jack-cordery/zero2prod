@@ -23,7 +23,10 @@ pub struct EmailClient {
 
 impl EmailClient {
     pub fn new(base_url: Url, sender: SubscriberEmail, authorization_token: SecretString) -> Self {
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("Failed to build cient");
         Self {
             client,
             base_url,
@@ -57,7 +60,8 @@ impl EmailClient {
             )
             .json(&body)
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 }
@@ -74,7 +78,9 @@ struct SendEmailRequest<'a> {
 
 #[cfg(test)]
 mod test {
-    use claim::assert_ok;
+    use std::time::Duration;
+
+    use claim::{assert_err, assert_ok};
     use fake::{
         Fake, Faker,
         faker::{
@@ -139,9 +145,6 @@ mod test {
 
     #[tokio::test]
     async fn send_email_succeeds_if_server_returns_200() {
-        // ok so here we will want to set up the server
-        // and then test that given the server returning
-        // 200 that our send_email method rerturns Result::ok
         let mock_server = MockServer::builder().start().await;
         Mock::given(any())
             .respond_with(ResponseTemplate::new(200))
@@ -162,5 +165,54 @@ mod test {
             .send_email(subscriber_email, &subject, &content, &content)
             .await;
         assert_ok!(response);
+    }
+
+    #[tokio::test]
+    async fn send_email_fails_if_server_returns_500() {
+        let mock_server = MockServer::builder().start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(500))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
+        let subject: String = Sentence(1..2).fake();
+        let content: String = Paragraph(1..10).fake();
+        let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
+
+        let mock_url =
+            Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
+        let fake_auth_token: String = Faker.fake();
+        let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
+        let response = email_client
+            .send_email(subscriber_email, &subject, &content, &content)
+            .await;
+        assert_err!(response);
+    }
+    #[tokio::test]
+    async fn send_email_fails_if_server_timesout() {
+        let mock_server = MockServer::builder().start().await;
+        let delay_duration = Duration::from_secs(3 * 60);
+        let response = ResponseTemplate::new(200).set_delay(delay_duration);
+        Mock::given(any())
+            .respond_with(response)
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let sender = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
+        let subject: String = Sentence(1..2).fake();
+        let content: String = Paragraph(1..10).fake();
+        let subscriber_email = SubscriberEmail::parse(SafeEmail().fake()).unwrap();
+
+        let mock_url =
+            Url::parse(&mock_server.uri()).expect("Failed to convert mock server to Url");
+        let fake_auth_token: String = Faker.fake();
+        let email_client = EmailClient::new(mock_url, sender, fake_auth_token.into());
+        let response = email_client
+            .send_email(subscriber_email, &subject, &content, &content)
+            .await;
+        assert_err!(response);
     }
 }
