@@ -1,3 +1,4 @@
+use reqwest::Response;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
 use uuid::Uuid;
@@ -23,6 +24,19 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
 pub struct TestApp {
     pub address: String,
     pub connection_pool: PgPool,
+}
+
+impl TestApp {
+    pub async fn post_subsription(&self, body: String) -> Response {
+        let client = reqwest::Client::new();
+        client
+            .post(format!("{}/subscribe", &self.address))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect("should return")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {
