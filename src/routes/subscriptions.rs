@@ -4,21 +4,7 @@ use sqlx::PgPool;
 use tracing::{self, instrument};
 use uuid::Uuid;
 
-use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
-
-pub enum Status {
-    Pending,
-    Confirmed,
-}
-
-impl From<Status> for String {
-    fn from(status: Status) -> String {
-        match status {
-            Status::Pending => "pending".into(),
-            Status::Confirmed => "confirmed".into(),
-        }
-    }
-}
+use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName, SubscriberStatus};
 
 impl TryFrom<FormData> for NewSubscriber {
     type Error = String;
@@ -26,8 +12,13 @@ impl TryFrom<FormData> for NewSubscriber {
     fn try_from(form: FormData) -> Result<Self, Self::Error> {
         let name = SubscriberName::parse(form.name)?;
         let email = SubscriberEmail::parse(form.email)?;
+        let status = SubscriberStatus::Pending;
 
-        let new_subscriber = NewSubscriber { name, email };
+        let new_subscriber = NewSubscriber {
+            name,
+            email,
+            status,
+        };
         Ok(new_subscriber)
     }
 }
@@ -58,7 +49,7 @@ pub async fn insert_subscriber(
     connection: &PgPool,
     new_subsriber: &NewSubscriber,
 ) -> Result<(), sqlx::Error> {
-    let initial_status: String = Status::Pending.into();
+    let initial_status: String = new_subsriber.status.into();
     sqlx::query!(
         r#"
 INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $2, $3, $4, $5)
@@ -67,7 +58,7 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
         new_subsriber.email.as_ref(),
         new_subsriber.name.as_ref(),
         Utc::now(),
-        initial_status
+        initial_status,
     )
     .execute(connection)
     .await
@@ -76,31 +67,4 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
         e
     })?;
     Ok(())
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_pending_converts_to_string_correctly() {
-        let actual: String = Status::Pending.into();
-        let expected: String = "pending".into();
-        assert_eq!(
-            actual, expected,
-            "testing Status::Pending converts to {}.",
-            expected
-        );
-    }
-
-    #[test]
-    fn test_confirmed_converts_to_string_correctly() {
-        let actual: String = Status::Confirmed.into();
-        let expected: String = "confirmed".into();
-        assert_eq!(
-            actual, expected,
-            "testing Status::Confirmed converts to {}",
-            expected
-        );
-    }
 }
