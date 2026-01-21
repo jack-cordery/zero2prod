@@ -39,7 +39,7 @@ async fn subscribe_returns_200_for_valid_form_data() {
 
     assert_eq!(saved.email, "jack@gmail.com");
     assert_eq!(saved.name, "jack cordery");
-    assert_eq!(saved.status, Some("pending".to_string()));
+    assert_eq!(saved.status, "pending".to_string());
 }
 
 #[tokio::test]
