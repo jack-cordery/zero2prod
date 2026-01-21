@@ -6,6 +6,20 @@ use uuid::Uuid;
 
 use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 
+pub enum Status {
+    Pending,
+    Confirmed,
+}
+
+impl From<Status> for String {
+    fn from(status: Status) -> String {
+        match status {
+            Status::Pending => "pending".into(),
+            Status::Confirmed => "confirmed".into(),
+        }
+    }
+}
+
 impl TryFrom<FormData> for NewSubscriber {
     type Error = String;
 
@@ -44,14 +58,16 @@ pub async fn insert_subscriber(
     connection: &PgPool,
     new_subsriber: &NewSubscriber,
 ) -> Result<(), sqlx::Error> {
+    let initial_status: String = Status::Pending.into();
     sqlx::query!(
         r#"
-INSERT INTO subscriptions (id, email, name, subscribed_at) VALUES ($1, $2, $3, $4)
+INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $2, $3, $4, $5)
 "#,
         Uuid::new_v4(),
         new_subsriber.email.as_ref(),
         new_subsriber.name.as_ref(),
-        Utc::now()
+        Utc::now(),
+        initial_status
     )
     .execute(connection)
     .await
@@ -60,4 +76,31 @@ INSERT INTO subscriptions (id, email, name, subscribed_at) VALUES ($1, $2, $3, $
         e
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_pending_converts_to_string_correctly() {
+        let actual: String = Status::Pending.into();
+        let expected: String = "pending".into();
+        assert_eq!(
+            actual, expected,
+            "testing Status::Pending converts to {}.",
+            expected
+        );
+    }
+
+    #[test]
+    fn test_confirmed_converts_to_string_correctly() {
+        let actual: String = Status::Confirmed.into();
+        let expected: String = "confirmed".into();
+        assert_eq!(
+            actual, expected,
+            "testing Status::Confirmed converts to {}",
+            expected
+        );
+    }
 }
