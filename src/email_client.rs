@@ -107,7 +107,6 @@ mod test {
             let request_body: Result<serde_json::Value, _> = request.body_json();
             match request_body {
                 Ok(body) => {
-                    dbg!(&body);
                     body.get("From").is_some()
                         && body.get("To").is_some()
                         && body.get("Subject").is_some()

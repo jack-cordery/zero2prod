@@ -1,3 +1,8 @@
+use wiremock::{
+    Mock, ResponseTemplate,
+    matchers::{method, path},
+};
+
 use crate::helpers::spawn_app;
 
 #[tokio::test]
@@ -26,10 +31,15 @@ async fn subscription_returns_400_for_invalid_form_data() {
 async fn subscribe_returns_200_for_valid_form_data() {
     let test_app = spawn_app().await;
 
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&test_app.email_server)
+        .await;
+
     let response = test_app
         .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
         .await;
-
     assert_eq!(200, response.status().as_u16());
 
     let saved = sqlx::query!("SELECT email, name, status FROM subscriptions",)
@@ -70,4 +80,24 @@ async fn subscribe_returns_400_for_invalid_or_missing_data() {
             "The api failed by returning rows that should not have been writtten to DB in test: {test_name}"
         );
     }
+}
+
+#[tokio::test]
+async fn subscribe_sends_confirmation_email_given_correct_inputs() {
+    let test_app = spawn_app().await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&test_app.email_server)
+        .await;
+
+    let response = test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+
+    assert_eq!(200, response.status().as_u16());
+
+    // assert occurs on drop of Mock
 }
