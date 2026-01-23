@@ -1,6 +1,8 @@
+use linkify::LinkFinder;
 use reqwest::Response;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
+use url::Url;
 use uuid::Uuid;
 use wiremock::MockServer;
 use zero2prod::{
@@ -22,10 +24,16 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
     }
 });
 
+pub struct ConfirmationLinks {
+    pub html: reqwest::Url,
+    pub text: reqwest::Url,
+}
+
 pub struct TestApp {
     pub address: String,
     pub connection_pool: PgPool,
     pub email_server: MockServer,
+    pub port: u16,
 }
 
 impl TestApp {
@@ -38,6 +46,28 @@ impl TestApp {
             .send()
             .await
             .expect("should return")
+    }
+    pub fn get_confirmation_links(&self, request: &wiremock::Request) -> ConfirmationLinks {
+        let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+
+        let get_link = |s: &str| {
+            let links: Vec<_> = LinkFinder::new()
+                .links(s)
+                .filter(|l| *l.kind() == linkify::LinkKind::Url)
+                .collect();
+            assert_eq!(links.len(), 1);
+            let mut link = Url::parse(links[0].as_str()).unwrap();
+            assert_eq!(link.host_str().unwrap(), "127.0.0.1"); // ensure we aren't calling internet
+            link.set_port(Some(self.port)).unwrap();
+            link
+        };
+
+        let html_link = get_link(body["HtmlBody"].as_str().unwrap());
+        let text_link = get_link(body["TextBody"].as_str().unwrap());
+        ConfirmationLinks {
+            html: html_link,
+            text: text_link,
+        }
     }
 }
 
@@ -59,6 +89,7 @@ pub async fn spawn_app() -> TestApp {
     let application = Application::build(&configuration)
         .await
         .expect("Failed to build application");
+    let port = application.port();
 
     let connection_pool = get_connection_pool(&configuration.database);
     let address = format!("http://127.0.0.1:{}", application.port());
@@ -69,6 +100,7 @@ pub async fn spawn_app() -> TestApp {
         address,
         connection_pool,
         email_server,
+        port,
     }
 }
 

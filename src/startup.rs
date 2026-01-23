@@ -8,7 +8,7 @@ use url::Url;
 use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
-    routes::{health_check, subscribe},
+    routes::{health_check, subscribe, subscriptions_confirm},
 };
 
 async fn greet(req: HttpRequest) -> impl Responder {
@@ -16,13 +16,17 @@ async fn greet(req: HttpRequest) -> impl Responder {
     format!("Hello {name}")
 }
 
+pub struct ApplicationBaseUrl(pub String);
+
 pub fn run(
     listener: TcpListener,
     connection_pool: PgPool,
     email_client: EmailClient,
+    application_base_url: String,
 ) -> Result<Server, std::io::Error> {
     let conn = web::Data::new(connection_pool);
     let email_client = web::Data::new(email_client);
+    let application_base_url = web::Data::new(ApplicationBaseUrl(application_base_url));
 
     let server = HttpServer::new(move || {
         App::new()
@@ -30,8 +34,13 @@ pub fn run(
             .route("/", web::get().to(greet))
             .route("/health", web::get().to(health_check))
             .route("/subscribe", web::post().to(subscribe))
+            .route(
+                "/subscriptions/confirm",
+                web::get().to(subscriptions_confirm),
+            )
             .app_data(conn.clone())
             .app_data(email_client.clone())
+            .app_data(application_base_url.clone())
     })
     .listen(listener)?
     .run();
@@ -65,9 +74,10 @@ impl Application {
             "{}:{}",
             configuration.application.host, configuration.application.port
         );
+        let application_base_url = configuration.application.base_url.clone();
         let listener = TcpListener::bind(application_address)?;
         let port = listener.local_addr().expect("should be valid").port();
-        let server = run(listener, connection, email_client)?;
+        let server = run(listener, connection, email_client, application_base_url)?;
 
         Ok(Self { port, server })
     }

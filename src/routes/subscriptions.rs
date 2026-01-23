@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName, SubscriberStatus},
     email_client::EmailClient,
+    startup::ApplicationBaseUrl,
 };
 
 impl TryFrom<FormData> for NewSubscriber {
@@ -32,11 +33,12 @@ pub struct FormData {
     name: String,
 }
 
-#[instrument(name = "Adding a new subscriber", skip(form, connection, email_client), fields(subscriber_email = %form.email, subscriber_name = %form.name))]
+#[instrument(name = "Adding a new subscriber", skip(form, connection, email_client, application_base_url), fields(subscriber_email = %form.email, subscriber_name = %form.name))]
 pub async fn subscribe(
     form: web::Form<FormData>,
     connection: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
+    application_base_url: web::Data<ApplicationBaseUrl>,
 ) -> HttpResponse {
     let new_subscriber: NewSubscriber = match form.0.try_into() {
         Ok(new_subcriber) => new_subcriber,
@@ -48,7 +50,7 @@ pub async fn subscribe(
     {
         return HttpResponse::InternalServerError().finish();
     };
-    if send_confirmation_email(&email_client, new_subscriber)
+    if send_confirmation_email(&email_client, new_subscriber, &application_base_url.0)
         .await
         .is_err()
     {
@@ -92,8 +94,10 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
 pub async fn send_confirmation_email(
     email_client: &EmailClient,
     new_subscriber: NewSubscriber,
+    application_base_url: &str,
 ) -> Result<(), reqwest::Error> {
-    let confirmation_link = "https://my-api.com/subscriptions/confirm";
+    let confirmation_link =
+        format!("{application_base_url}/subscriptions/confirm?subscription_token=my_token");
     let subject = "Welcome!";
     let html_body = format!(
         "Welcome to our newsletter!<br />\
@@ -107,7 +111,7 @@ pub async fn send_confirmation_email(
     );
 
     email_client
-        .send_email(new_subscriber.email, &subject, &text_body, &html_body)
+        .send_email(new_subscriber.email, subject, &text_body, &html_body)
         .await?;
     Ok(())
 }
