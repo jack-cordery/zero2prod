@@ -7,7 +7,7 @@ pub enum SubscriberStatus {
 impl From<SubscriberStatus> for String {
     fn from(status: SubscriberStatus) -> String {
         match status {
-            SubscriberStatus::Pending => "pending".into(),
+            SubscriberStatus::Pending => "pending_confirmation".into(),
             SubscriberStatus::Confirmed => "confirmed".into(),
         }
     }
@@ -20,7 +20,7 @@ mod test {
     #[test]
     fn test_pending_converts_to_string_correctly() {
         let actual: String = SubscriberStatus::Pending.into();
-        let expected: String = "pending".into();
+        let expected: String = "pending_confirmation".into();
         assert_eq!(
             actual, expected,
             "testing Status::Pending converts to {}.",
