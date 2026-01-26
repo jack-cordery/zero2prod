@@ -1,6 +1,6 @@
 use wiremock::{
     Mock, ResponseTemplate,
-    matchers::{any, path},
+    matchers::{any, method, path},
 };
 
 use crate::helpers::spawn_app;
@@ -17,7 +17,7 @@ async fn subscription_confirm_rejects_requests_without_query_param() {
 async fn the_link_returned_by_subscribe_returns_200_if_called() {
     let test_app = spawn_app().await;
 
-    Mock::given(any())
+    Mock::given(method("POST"))
         .and(path("/email"))
         .respond_with(ResponseTemplate::new(200))
         .expect(1)
