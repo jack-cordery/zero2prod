@@ -1,4 +1,3 @@
-use linkify::LinkFinder;
 use wiremock::{
     Mock, ResponseTemplate,
     matchers::{method, path},
