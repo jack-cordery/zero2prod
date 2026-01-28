@@ -13,6 +13,16 @@ impl From<SubscriberStatus> for String {
     }
 }
 
+impl SubscriberStatus {
+    pub fn from_string(status: String) -> Self {
+        match status.as_str() {
+            "pending_confirmation" => Self::Pending,
+            "confirmed" => Self::Confirmed,
+            other => panic!("Only pending_confirmed and confirmed are supported: {other}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

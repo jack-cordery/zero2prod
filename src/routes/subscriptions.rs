@@ -50,19 +50,36 @@ pub async fn subscribe(
         Err(_) => return HttpResponse::InternalServerError().finish(),
     };
 
-    let subscriber_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
-        Ok(subscriber_id) => subscriber_id,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
-    };
+    let insert_response =
+        match insert_subscriber(&mut transaction, &connection, &new_subscriber).await {
+            Ok(subscriber_id) => subscriber_id,
+            Err(SubscriberError::AlreadyConfirmed) => {
+                return HttpResponse::Conflict().finish();
+            }
+            Err(_) => return HttpResponse::InternalServerError().finish(),
+        };
 
-    let subscription_token = generate_subscription_token();
-
-    if store_token(subscriber_id, &subscription_token, &mut transaction)
+    let subscription_token = if insert_response.new {
+        let subscription_token = generate_subscription_token();
+        if store_token(
+            insert_response.subscriber_id,
+            &subscription_token,
+            &mut transaction,
+        )
         .await
         .is_err()
-    {
-        return HttpResponse::InternalServerError().finish();
-    }
+        {
+            return HttpResponse::InternalServerError().finish();
+        }
+        subscription_token
+    } else {
+        match get_token_from_subscriber_id(&insert_response.subscriber_id, &connection).await {
+            Ok(token) => token,
+            Err(_) => {
+                return HttpResponse::InternalServerError().finish();
+            }
+        }
+    };
 
     if transaction.commit().await.is_err() {
         return HttpResponse::InternalServerError().finish();
@@ -84,17 +101,23 @@ pub async fn subscribe(
     }
 }
 
+pub struct InsertResponse {
+    subscriber_id: Uuid,
+    new: bool,
+}
+
 #[instrument(
     name = "Inserting new subcriber to DB",
     skip(transaction, new_subscriber)
 )]
 pub async fn insert_subscriber(
     transaction: &mut Transaction<'_, Postgres>,
+    pool: &PgPool,
     new_subscriber: &NewSubscriber,
-) -> Result<Uuid, sqlx::Error> {
+) -> Result<InsertResponse, SubscriberError> {
     let initial_status: String = new_subscriber.status.into();
     let user_id = Uuid::new_v4();
-    sqlx::query!(
+    let query_result = sqlx::query!(
         r#"
 INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $2, $3, $4, $5)
 "#,
@@ -109,8 +132,30 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
         e
-    })?;
-    Ok(user_id)
+    });
+    match query_result {
+        Ok(_) => {
+            return Ok(InsertResponse {
+                subscriber_id: user_id,
+                new: true,
+            });
+        }
+        Err(sqlx::Error::Database(db_err)) => {
+            if db_err.code().as_deref() == Some("23505") {
+                let subscriber_id =
+                    check_duplicate_user_is_unconfirmed(&new_subscriber.email, pool).await?;
+                return Ok(InsertResponse {
+                    subscriber_id,
+                    new: false,
+                });
+            } else {
+                return Err(SubscriberError::Sqlx(sqlx::Error::Database(db_err)));
+            }
+        }
+        Err(e) => {
+            return Err(SubscriberError::Sqlx(e));
+        }
+    }
 }
 
 #[instrument(
@@ -165,6 +210,53 @@ pub async fn store_token(
         e
     })?;
     Ok(())
+}
+
+#[instrument(
+    name = "Get the token from the subscriber id",
+    skip(subscriber_id, pool)
+)]
+pub async fn get_token_from_subscriber_id(
+    subscriber_id: &Uuid,
+    pool: &PgPool,
+) -> Result<String, sqlx::Error> {
+    let result = sqlx::query!(
+        r#"SELECT subscription_token FROM subscription_tokens WHERE subscriber_id = $1;"#,
+        subscriber_id,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query {e:?}");
+        e
+    })?;
+    Ok(result.subscription_token)
+}
+
+pub enum SubscriberError {
+    AlreadyConfirmed,
+    Sqlx(sqlx::Error),
+}
+#[instrument(
+    name = "Check duplicate user is unconfirmed",
+    skip(subscriber_email, pool)
+)]
+pub async fn check_duplicate_user_is_unconfirmed(
+    subscriber_email: &SubscriberEmail,
+    pool: &PgPool,
+) -> Result<Uuid, SubscriberError> {
+    let subscriber = sqlx::query!(
+        r#"SELECT id, status FROM subscriptions WHERE email = $1"#,
+        subscriber_email.as_ref()
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(SubscriberError::Sqlx)?;
+
+    match SubscriberStatus::from_string(subscriber.status) {
+        SubscriberStatus::Confirmed => return Err(SubscriberError::AlreadyConfirmed),
+        SubscriberStatus::Pending => return Ok(subscriber.id),
+    }
 }
 
 fn generate_subscription_token() -> String {

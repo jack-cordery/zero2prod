@@ -140,3 +140,81 @@ async fn subscribe_sends_confirmation_email_with_a_link() {
 
     assert_eq!(confirmation_links.html, confirmation_links.text);
 }
+
+#[tokio::test]
+async fn unconfirmed_resubscription_returns_200() {
+    let test_app = spawn_app().await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(2) // expect two emails
+        .mount(&test_app.email_server)
+        .await;
+
+    test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+
+    let response = test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+    assert_eq!(200, response.status().as_u16());
+}
+#[tokio::test]
+async fn confirmed_resubscription_returns_409() {
+    let test_app = spawn_app().await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1) // dont expect a second email request
+        .mount(&test_app.email_server)
+        .await;
+
+    test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+
+    let recieved_request = &test_app.email_server.received_requests().await.unwrap()[0];
+
+    let confirmation_links = test_app.get_confirmation_links(recieved_request);
+
+    reqwest::get(confirmation_links.html)
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let response = test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+    assert_eq!(409, response.status().as_u16());
+}
+
+#[tokio::test]
+async fn unconfirmed_resubscription_emails_same_link_twice() {
+    let test_app = spawn_app().await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(2) // expect two emails
+        .mount(&test_app.email_server)
+        .await;
+
+    test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+
+    test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+
+    let first_email = &test_app.email_server.received_requests().await.unwrap()[0];
+    let second_email = &test_app.email_server.received_requests().await.unwrap()[1];
+
+    let first_confirmation_links = test_app.get_confirmation_links(first_email);
+    let second_confirmation_links = test_app.get_confirmation_links(second_email);
+    assert_eq!(first_confirmation_links, second_confirmation_links);
+}

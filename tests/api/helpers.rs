@@ -24,6 +24,7 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
     }
 });
 
+#[derive(PartialEq, Debug)]
 pub struct ConfirmationLinks {
     pub html: reqwest::Url,
     pub text: reqwest::Url,
