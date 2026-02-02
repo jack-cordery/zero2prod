@@ -44,6 +44,26 @@ async fn subscribe_returns_200_for_valid_form_data() {
 }
 
 #[tokio::test]
+async fn subscribe_fails_if_there_is_a_fatal_database_error() {
+    // we will enforce the database returning a falter error
+    // by first deleting a critical column from the db and the calling Post subscriber
+    // then asserting that it returns status 500
+
+    let test_app = spawn_app().await;
+
+    sqlx::query!("ALTER TABLE subscription_tokens DROP COLUMN subscription_token")
+        .execute(&test_app.connection_pool)
+        .await
+        .expect("Failed to execute query.");
+
+    let response = test_app
+        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .await;
+
+    assert_eq!(500, response.status().as_u16());
+}
+
+#[tokio::test]
 async fn subscribe_persists_the_new_subscriber() {
     let test_app = spawn_app().await;
 
