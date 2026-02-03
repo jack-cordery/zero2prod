@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, ResponseError, web};
+use actix_web::{HttpResponse, ResponseError, http::StatusCode, web};
 use chrono::Utc;
 use rand::{Rng, distr::Alphanumeric};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -40,24 +40,11 @@ pub async fn subscribe(
     connection: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
     application_base_url: web::Data<ApplicationBaseUrl>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let new_subscriber: NewSubscriber = match form.0.try_into() {
-        Ok(new_subcriber) => new_subcriber,
-        Err(_) => return Ok(HttpResponse::BadRequest().finish()),
-    };
-    let mut transaction = match connection.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
-    };
+) -> Result<HttpResponse, SubscribeError> {
+    let new_subscriber: NewSubscriber = form.0.try_into()?;
+    let mut transaction = connection.begin().await?;
 
-    let insert_response =
-        match insert_subscriber(&mut transaction, &connection, &new_subscriber).await {
-            Ok(subscriber_id) => subscriber_id,
-            Err(SubscriberError::AlreadyConfirmed) => {
-                return Ok(HttpResponse::Conflict().finish());
-            }
-            Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
-        };
+    let insert_response = insert_subscriber(&mut transaction, &connection, &new_subscriber).await?;
 
     let subscription_token = if insert_response.new {
         let subscription_token = generate_subscription_token();
@@ -69,32 +56,20 @@ pub async fn subscribe(
         .await?;
         subscription_token
     } else {
-        match get_token_from_subscriber_id(&insert_response.subscriber_id, &connection).await {
-            Ok(token) => token,
-            Err(_) => {
-                return Ok(HttpResponse::InternalServerError().finish());
-            }
-        }
+        get_token_from_subscriber_id(&insert_response.subscriber_id, &connection).await?
     };
 
-    if transaction.commit().await.is_err() {
-        return Ok(HttpResponse::InternalServerError().finish());
-    };
+    transaction.commit().await?;
 
-    match send_confirmation_email(
+    send_confirmation_email(
         &email_client,
         new_subscriber,
         &application_base_url.0,
         &subscription_token,
     )
-    .await
-    {
-        Err(e) => {
-            tracing::error!("Failed to send confirmation email {e:?}");
-            return Ok(HttpResponse::InternalServerError().finish());
-        }
-        Ok(_) => return Ok(HttpResponse::Ok().finish()),
-    }
+    .await?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 pub struct InsertResponse {
@@ -110,7 +85,7 @@ pub async fn insert_subscriber(
     transaction: &mut Transaction<'_, Postgres>,
     pool: &PgPool,
     new_subscriber: &NewSubscriber,
-) -> Result<InsertResponse, SubscriberError> {
+) -> Result<InsertResponse, SubscribeError> {
     let initial_status: String = new_subscriber.status.into();
     let user_id = Uuid::new_v4();
     let query_result = sqlx::query!(
@@ -145,11 +120,11 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
                     new: false,
                 });
             } else {
-                return Err(SubscriberError::Sqlx(sqlx::Error::Database(db_err)));
+                return Err(SubscribeError::DatabaseError(sqlx::Error::Database(db_err)));
             }
         }
         Err(e) => {
-            return Err(SubscriberError::Sqlx(e));
+            return Err(SubscribeError::DatabaseError(e));
         }
     }
 }
@@ -185,9 +160,58 @@ pub async fn send_confirmation_email(
     Ok(())
 }
 
-pub struct StoreTokenError(sqlx::Error);
+#[derive(Debug)]
+pub enum SubscribeError {
+    AlreadyConfirmedError,
+    ValidationError(String),
+    DatabaseError(sqlx::Error),
+    StoreTokenError(StoreTokenError),
+    SendEmailError(reqwest::Error),
+}
 
-impl ResponseError for StoreTokenError {}
+impl std::fmt::Display for SubscribeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed to create a new subscriber")
+    }
+}
+
+impl std::error::Error for SubscribeError {}
+impl ResponseError for SubscribeError {
+    fn status_code(&self) -> StatusCode {
+        match &self {
+            Self::AlreadyConfirmedError => StatusCode::CONFLICT,
+            Self::ValidationError(_) => StatusCode::BAD_REQUEST,
+            Self::DatabaseError(_) | Self::StoreTokenError(_) | Self::SendEmailError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        }
+    }
+}
+
+impl From<StoreTokenError> for SubscribeError {
+    fn from(e: StoreTokenError) -> Self {
+        Self::StoreTokenError(e)
+    }
+}
+
+impl From<sqlx::Error> for SubscribeError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::DatabaseError(e)
+    }
+}
+
+impl From<String> for SubscribeError {
+    fn from(e: String) -> Self {
+        Self::ValidationError(e)
+    }
+}
+impl From<reqwest::Error> for SubscribeError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::SendEmailError(e)
+    }
+}
+
+pub struct StoreTokenError(sqlx::Error);
 
 impl std::error::Error for StoreTokenError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -268,10 +292,6 @@ pub async fn get_token_from_subscriber_id(
     Ok(result.subscription_token)
 }
 
-pub enum SubscriberError {
-    AlreadyConfirmed,
-    Sqlx(sqlx::Error),
-}
 #[instrument(
     name = "Check duplicate user is unconfirmed",
     skip(subscriber_email, pool)
@@ -279,17 +299,17 @@ pub enum SubscriberError {
 pub async fn check_duplicate_user_is_unconfirmed(
     subscriber_email: &SubscriberEmail,
     pool: &PgPool,
-) -> Result<Uuid, SubscriberError> {
+) -> Result<Uuid, SubscribeError> {
     let subscriber = sqlx::query!(
         r#"SELECT id, status FROM subscriptions WHERE email = $1"#,
         subscriber_email.as_ref()
     )
     .fetch_one(pool)
     .await
-    .map_err(SubscriberError::Sqlx)?;
+    .map_err(SubscribeError::DatabaseError)?;
 
     match SubscriberStatus::from_string(subscriber.status) {
-        SubscriberStatus::Confirmed => return Err(SubscriberError::AlreadyConfirmed),
+        SubscriberStatus::Confirmed => return Err(SubscribeError::AlreadyConfirmedError),
         SubscriberStatus::Pending => return Ok(subscriber.id),
     }
 }
