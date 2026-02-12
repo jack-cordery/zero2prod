@@ -43,10 +43,9 @@ pub async fn subscribe(
 ) -> Result<HttpResponse, SubscribeError> {
     let new_subscriber: NewSubscriber =
         form.0.try_into().map_err(SubscribeError::ValidationError)?;
-    let mut transaction = connection
-        .begin()
-        .await
-        .map_err(SubscribeError::PoolError)?;
+    let mut transaction = connection.begin().await.map_err(|e| {
+        SubscribeError::UnexpectedError(Box::new(e), "Failed to begin transaction.".into())
+    })?;
 
     let insert_response = insert_subscriber(&mut transaction, &connection, &new_subscriber).await?;
 
@@ -57,18 +56,25 @@ pub async fn subscribe(
             &subscription_token,
             &mut transaction,
         )
-        .await?;
+        .await
+        .map_err(|e| {
+            SubscribeError::UnexpectedError(Box::new(e), "Failed to store token".into())
+        })?;
         subscription_token
     } else {
         get_token_from_subscriber_id(&insert_response.subscriber_id, &connection)
             .await
-            .map_err(SubscribeError::GetTokenError)?
+            .map_err(|e| {
+                SubscribeError::UnexpectedError(
+                    Box::new(e),
+                    "Failed to get token from subscriber id.".into(),
+                )
+            })?
     };
 
-    transaction
-        .commit()
-        .await
-        .map_err(SubscribeError::TransactionCommitError)?;
+    transaction.commit().await.map_err(|e| {
+        SubscribeError::UnexpectedError(Box::new(e), "Failed to commit transaction.".into())
+    })?;
 
     send_confirmation_email(
         &email_client,
@@ -76,7 +82,10 @@ pub async fn subscribe(
         &application_base_url.0,
         &subscription_token,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        SubscribeError::UnexpectedError(Box::new(e), "Failed to send confirmation email".into())
+    })?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -129,11 +138,17 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
                     new: false,
                 });
             } else {
-                return Err(SubscribeError::GetTokenError(sqlx::Error::Database(db_err)));
+                return Err(SubscribeError::UnexpectedError(
+                    Box::new(sqlx::Error::Database(db_err)),
+                    "Failed to query db".into(),
+                ));
             }
         }
         Err(e) => {
-            return Err(SubscribeError::GetTokenError(e));
+            return Err(SubscribeError::UnexpectedError(
+                Box::new(e),
+                "Failed to query database".into(),
+            ));
         }
     }
 }
@@ -171,22 +186,12 @@ pub async fn send_confirmation_email(
 
 #[derive(thiserror::Error)]
 pub enum SubscribeError {
-    #[error("User already confirmed")]
-    AlreadyConfirmedError,
     #[error("{0}")]
     ValidationError(String),
-    #[error("Failed to acquire pool from the database")]
-    PoolError(#[source] sqlx::Error),
-    #[error("Failed to insert subscriber into the database")]
-    InsertSubscriberError(#[source] sqlx::Error),
-    #[error("Failed to commit transaction to the database")]
-    TransactionCommitError(#[source] sqlx::Error),
-    #[error("Failed to get token from the database")]
-    GetTokenError(#[source] sqlx::Error),
-    #[error("Failed to store token in the database")]
-    StoreTokenError(#[from] StoreTokenError),
-    #[error("Failed to send confirmation email")]
-    SendEmailError(#[from] reqwest::Error),
+    #[error("User already confirmed")]
+    AlreadyConfirmedError,
+    #[error("{1}")]
+    UnexpectedError(#[source] Box<dyn std::error::Error>, String),
 }
 
 impl std::fmt::Debug for SubscribeError {
@@ -198,14 +203,9 @@ impl std::fmt::Debug for SubscribeError {
 impl ResponseError for SubscribeError {
     fn status_code(&self) -> StatusCode {
         match &self {
-            Self::AlreadyConfirmedError => StatusCode::CONFLICT,
             Self::ValidationError(_) => StatusCode::BAD_REQUEST,
-            Self::PoolError(_)
-            | Self::InsertSubscriberError(_)
-            | Self::TransactionCommitError(_)
-            | Self::GetTokenError(_)
-            | Self::StoreTokenError(_)
-            | Self::SendEmailError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AlreadyConfirmedError => StatusCode::CONFLICT,
+            Self::UnexpectedError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -305,7 +305,7 @@ pub async fn check_duplicate_user_is_unconfirmed(
     )
     .fetch_one(pool)
     .await
-    .map_err(SubscribeError::GetTokenError)?;
+    .map_err(|e| SubscribeError::UnexpectedError(Box::new(e), "Failed to Query database".into()))?;
 
     match SubscriberStatus::from_string(subscriber.status) {
         SubscriberStatus::Confirmed => return Err(SubscribeError::AlreadyConfirmedError),
