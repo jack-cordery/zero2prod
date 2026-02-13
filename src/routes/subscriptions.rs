@@ -1,4 +1,5 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode, web};
+use anyhow::Context;
 use chrono::Utc;
 use rand::{Rng, distr::Alphanumeric};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -43,9 +44,10 @@ pub async fn subscribe(
 ) -> Result<HttpResponse, SubscribeError> {
     let new_subscriber: NewSubscriber =
         form.0.try_into().map_err(SubscribeError::ValidationError)?;
-    let mut transaction = connection.begin().await.map_err(|e| {
-        SubscribeError::UnexpectedError(Box::new(e), "Failed to begin transaction.".into())
-    })?;
+    let mut transaction = connection
+        .begin()
+        .await
+        .context("Failed to acquire Postgres connection from the pool")?;
 
     let insert_response = insert_subscriber(&mut transaction, &connection, &new_subscriber).await?;
 
@@ -57,24 +59,18 @@ pub async fn subscribe(
             &mut transaction,
         )
         .await
-        .map_err(|e| {
-            SubscribeError::UnexpectedError(Box::new(e), "Failed to store token".into())
-        })?;
+        .context("Failed to store confirmation token for a new subscriber")?;
         subscription_token
     } else {
         get_token_from_subscriber_id(&insert_response.subscriber_id, &connection)
             .await
-            .map_err(|e| {
-                SubscribeError::UnexpectedError(
-                    Box::new(e),
-                    "Failed to get token from subscriber id.".into(),
-                )
-            })?
+            .context("Failed to get confirmation token from subscriber id")?
     };
 
-    transaction.commit().await.map_err(|e| {
-        SubscribeError::UnexpectedError(Box::new(e), "Failed to commit transaction.".into())
-    })?;
+    transaction
+        .commit()
+        .await
+        .context("Failed to commit transaction to store new subscriber")?;
 
     send_confirmation_email(
         &email_client,
@@ -83,9 +79,7 @@ pub async fn subscribe(
         &subscription_token,
     )
     .await
-    .map_err(|e| {
-        SubscribeError::UnexpectedError(Box::new(e), "Failed to send confirmation email".into())
-    })?;
+    .context("Failed to send confirmation email to new subscriber")?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -139,15 +133,14 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
                 });
             } else {
                 return Err(SubscribeError::UnexpectedError(
-                    Box::new(sqlx::Error::Database(db_err)),
-                    "Failed to query db".into(),
+                    anyhow::Error::new(sqlx::Error::Database(db_err))
+                        .context("Failed to insert subscriber into database"),
                 ));
             }
         }
         Err(e) => {
             return Err(SubscribeError::UnexpectedError(
-                Box::new(e),
-                "Failed to query database".into(),
+                anyhow::Error::new(e).context("Failed to insert subscriber into database"),
             ));
         }
     }
@@ -190,8 +183,8 @@ pub enum SubscribeError {
     ValidationError(String),
     #[error("User already confirmed")]
     AlreadyConfirmedError,
-    #[error("{1}")]
-    UnexpectedError(#[source] Box<dyn std::error::Error>, String),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl std::fmt::Debug for SubscribeError {
@@ -205,7 +198,7 @@ impl ResponseError for SubscribeError {
         match &self {
             Self::ValidationError(_) => StatusCode::BAD_REQUEST,
             Self::AlreadyConfirmedError => StatusCode::CONFLICT,
-            Self::UnexpectedError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -305,7 +298,7 @@ pub async fn check_duplicate_user_is_unconfirmed(
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| SubscribeError::UnexpectedError(Box::new(e), "Failed to Query database".into()))?;
+    .context("Failed to get subscriber from email")?;
 
     match SubscriberStatus::from_string(subscriber.status) {
         SubscriberStatus::Confirmed => return Err(SubscribeError::AlreadyConfirmedError),
