@@ -111,11 +111,7 @@ INSERT INTO subscriptions (id, email, name, subscribed_at, status) VALUES ($1, $
         initial_status,
     )
     .execute(&mut **transaction)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        e
-    });
+    .await;
     match query_result {
         Ok(_) => {
             return Ok(InsertResponse {
@@ -256,10 +252,7 @@ pub async fn store_token(
     )
     .execute(&mut **transaction)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        StoreTokenError(e)
-    })?;
+    .map_err(StoreTokenError)?;
     Ok(())
 }
 
@@ -276,11 +269,7 @@ pub async fn get_token_from_subscriber_id(
         subscriber_id,
     )
     .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to execute query {e:?}");
-        e
-    })?;
+    .await?;
     Ok(result.subscription_token)
 }
 
