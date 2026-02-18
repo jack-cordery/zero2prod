@@ -8,7 +8,7 @@ use url::Url;
 use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
-    routes::{health_check, subscribe, subscriptions_confirm},
+    routes::{health_check, publish_newsletter, subscribe, subscriptions_confirm},
 };
 
 async fn greet(req: HttpRequest) -> impl Responder {
@@ -38,6 +38,7 @@ pub fn run(
                 "/subscriptions/confirm",
                 web::get().to(subscriptions_confirm),
             )
+            .route("/newsletters", web::post().to(publish_newsletter))
             .app_data(conn.clone())
             .app_data(email_client.clone())
             .app_data(application_base_url.clone())
