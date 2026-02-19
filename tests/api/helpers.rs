@@ -70,6 +70,16 @@ impl TestApp {
             text: text_link,
         }
     }
+
+    pub async fn post_newsletter(&self, body: serde_json::Value) -> Response {
+        let client = reqwest::Client::new();
+        client
+            .post(format!("{}/newsletters", &self.address))
+            .json(&body)
+            .send()
+            .await
+            .expect("should return")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {

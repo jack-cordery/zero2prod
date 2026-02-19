@@ -41,7 +41,7 @@ impl EmailClient {
     }
     pub async fn send_email(
         &self,
-        recipient: SubscriberEmail,
+        recipient: &SubscriberEmail,
         subject: &str,
         text_content: &str,
         html_content: &str,
@@ -157,7 +157,7 @@ mod test {
 
         let email_client = email_client(&mock_server.uri());
         let _ = email_client
-            .send_email(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
         // Assert
         // Mock expectations are checked on drop
@@ -174,7 +174,7 @@ mod test {
 
         let email_client = email_client(&mock_server.uri());
         let response = email_client
-            .send_email(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
         assert_ok!(response);
     }
@@ -190,7 +190,7 @@ mod test {
 
         let email_client = email_client(&mock_server.uri());
         let response = email_client
-            .send_email(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
         assert_err!(response);
     }
@@ -207,7 +207,7 @@ mod test {
 
         let email_client = email_client(&mock_server.uri());
         let response = email_client
-            .send_email(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
         assert_err!(response);
     }
