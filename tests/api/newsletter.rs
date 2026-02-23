@@ -6,7 +6,7 @@ use wiremock::{
 use crate::helpers::{ConfirmationLinks, TestApp, spawn_app};
 
 #[tokio::test]
-async fn test_no_unconfirmed_subscribers_are_sent_newsletter() {
+async fn no_unconfirmed_subscribers_are_sent_newsletter() {
     let test_app = spawn_app().await;
 
     create_unconfirmed_subscriber(&test_app).await;
@@ -32,7 +32,7 @@ async fn test_no_unconfirmed_subscribers_are_sent_newsletter() {
 }
 
 #[tokio::test]
-async fn test_newsletter_gets_sent_to_confirmed_subscribers() {
+async fn newsletter_gets_sent_to_confirmed_subscribers() {
     // here we will want to create
     let test_app = spawn_app().await;
 
@@ -59,7 +59,7 @@ async fn test_newsletter_gets_sent_to_confirmed_subscribers() {
 }
 
 #[tokio::test]
-async fn test_return_400_given_invalid_data() {
+async fn return_400_given_invalid_data() {
     let test_cases = vec![
         (
             serde_json::json!({
