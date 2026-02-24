@@ -25,7 +25,7 @@ DB_PORT="${POSTGRES_PORT:=5432}"
 # Launch postgres using Docker
 if [[ -z "${SKIP_DOCKER}" ]]
 then
-  docker run \
+  docker run --rm \
       -e POSTGRES_USER=${DB_USER} \
       -e POSTGRES_PASSWORD=${DB_PASSWORD} \
       -e POSTGRES_DB=${DB_NAME} \
