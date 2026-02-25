@@ -108,6 +108,34 @@ async fn return_400_given_invalid_data() {
     }
 }
 
+#[tokio::test]
+async fn rejection_of_request_no_authorization_header() {
+    // The set-up is just a request to /newsletter and we want the response to be
+    // 401 and a header of www - basic "publish"
+    let test_app = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let newsletter_body = serde_json::json!({"title": "Newsletter!",
+        "content":{
+            "text":"newsletter body as plain text",
+            "html":"<p> newsletter body as html </p>"
+        }
+    });
+
+    let response = client
+        .post(format!("{}/newsletters", test_app.address))
+        .json(&newsletter_body)
+        .send()
+        .await
+        .expect("should return");
+
+    assert_eq!(401, response.status().as_u16());
+    assert_eq!(
+        r#"Basic realm="publish""#,
+        response.headers()["WWW-AUTHENTICATE"]
+    );
+}
+
 async fn create_unconfirmed_subscriber(test_app: &TestApp) -> ConfirmationLinks {
     let _mock_guard = Mock::given(method("POST"))
         .and(path("/email"))

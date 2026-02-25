@@ -1,5 +1,15 @@
-use actix_web::{HttpResponse, ResponseError, http::StatusCode, web};
-use anyhow::Context;
+use actix_web::{
+    HttpRequest, HttpResponse, ResponseError,
+    body::BoxBody,
+    http::{
+        StatusCode,
+        header::{HeaderMap, WWW_AUTHENTICATE},
+    },
+    web,
+};
+use anyhow::{Context, anyhow};
+use base64::{Engine, prelude::BASE64_STANDARD};
+use secrecy::SecretString;
 use sqlx::PgPool;
 
 use crate::{
@@ -25,6 +35,8 @@ pub struct ConfirmedSubscriber {
 
 #[derive(thiserror::Error)]
 pub enum PublishError {
+    #[error("Authentication failed.")]
+    AuthError(#[source] anyhow::Error),
     #[error(transparent)]
     UnexpectedError(#[from] anyhow::Error),
 }
@@ -36,11 +48,50 @@ impl std::fmt::Debug for PublishError {
 }
 
 impl ResponseError for PublishError {
-    fn status_code(&self) -> StatusCode {
+    fn error_response(&self) -> HttpResponse<BoxBody> {
         match &self {
-            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedError(_) => HttpResponse::InternalServerError().finish(),
+            Self::AuthError(_) => HttpResponse::Unauthorized()
+                .insert_header((WWW_AUTHENTICATE, r#"Basic realm="publish""#))
+                .finish(),
         }
     }
+}
+
+pub struct Credentials {
+    username: String,
+    password: SecretString,
+}
+
+pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
+    let auth_header = headers
+        .get("Authorization")
+        .context("No authorization header provided")?
+        .to_str()
+        .context("The authorization header was not valid UTF-8 ASCII string")?;
+
+    let auth_header_basic_removed = auth_header
+        .strip_prefix("Basic ")
+        .context("Autherization header was not Basic")?;
+
+    let decoded_auth_header = BASE64_STANDARD
+        .decode(auth_header_basic_removed)
+        .context("The authorization header was not valid base64")?;
+    let decoded_str =
+        String::from_utf8(decoded_auth_header).context("Decoded credentails were not utf-8")?;
+    let mut decoded_split = decoded_str.splitn(2, ":");
+    let username = decoded_split
+        .next()
+        .ok_or_else(|| anyhow!("Username must be provided in 'Basic' auth."))?;
+
+    let password = decoded_split
+        .next()
+        .ok_or_else(|| anyhow!("Password must be provided in 'Basic' auth."))?;
+
+    Ok(Credentials {
+        username: username.to_string(),
+        password: SecretString::new(password.into()),
+    })
 }
 
 #[tracing::instrument(name = "Publish newsletter", skip(body, email_client), fields(newsletter_title=%body.title))]
@@ -48,7 +99,9 @@ pub async fn publish_newsletter(
     body: web::Json<BodyData>,
     pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
+    request: HttpRequest,
 ) -> Result<HttpResponse, PublishError> {
+    let credentials = basic_authentication(request.headers()).map_err(PublishError::AuthError)?;
     let confirmed_subscriptions = get_confirmed_subscriptions(&pool).await?;
     for sub in confirmed_subscriptions {
         match sub {

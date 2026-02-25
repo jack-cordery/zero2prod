@@ -1,5 +1,10 @@
+use fake::{
+    Fake,
+    faker::{internet::ar_sa::Password, name::raw::NameWithTitle},
+    locales::EN,
+};
 use linkify::LinkFinder;
-use reqwest::Response;
+use reqwest::{Client, Response};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
 use url::Url;
@@ -72,9 +77,15 @@ impl TestApp {
     }
 
     pub async fn post_newsletter(&self, body: serde_json::Value) -> Response {
-        let client = reqwest::Client::new();
+        // i need to add a header AUTHORIZATION: Basic encoded(username:password)
+        //
+        let name: String = NameWithTitle(EN).fake();
+        let password: String = Password(1..10).fake();
+
+        let client = Client::new();
         client
             .post(format!("{}/newsletters", &self.address))
+            .basic_auth(name, Some(password))
             .json(&body)
             .send()
             .await
