@@ -77,32 +77,41 @@ impl TestApp {
     }
 
     pub async fn post_newsletter(&self, body: serde_json::Value) -> Response {
-        // i need to add a header AUTHORIZATION: Basic encoded(username:password)
-        // TODO: Ensure this test requires an actual username/password combination
-        let name: String = NameWithTitle(EN).fake();
-        let password: String = Password(1..10).fake();
-
-        let user_id: Uuid = Uuid::new_v4();
-
-        sqlx::query!(
-            r#"INSERT INTO users VALUES ($1, $2, $3);"#,
-            user_id,
-            name,
-            password
-        )
-        .execute(&self.connection_pool)
-        .await
-        .expect("Failed to insert test user.");
+        let (username, password) = get_test_user(&self.connection_pool).await;
 
         let client = Client::new();
         client
             .post(format!("{}/newsletters", &self.address))
-            .basic_auth(name, Some(password))
+            .basic_auth(username, Some(password))
             .json(&body)
             .send()
             .await
             .expect("should return")
     }
+}
+
+pub async fn add_test_user(pool: &PgPool) {
+    let name: String = NameWithTitle(EN).fake();
+    let password: String = Password(1..10).fake();
+
+    let user_id: Uuid = Uuid::new_v4();
+    sqlx::query!(
+        r#"INSERT INTO users VALUES ($1, $2, $3);"#,
+        user_id,
+        name,
+        password
+    )
+    .execute(pool)
+    .await
+    .expect("Failed to insert test user.");
+}
+
+pub async fn get_test_user(pool: &PgPool) -> (String, String) {
+    let record = sqlx::query!(r#"SELECT username, password FROM users LIMIT 1;"#)
+        .fetch_one(pool)
+        .await
+        .expect("Failed to query database for test user");
+    (record.username, record.password)
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -130,12 +139,14 @@ pub async fn spawn_app() -> TestApp {
 
     tokio::spawn(application.run_until_stopped());
 
-    TestApp {
+    let test_app = TestApp {
         address,
         connection_pool,
         email_server,
         port,
-    }
+    };
+    add_test_user(&test_app.connection_pool).await;
+    test_app
 }
 
 async fn configure_database(db_settings: &DatabaseSettings) -> PgPool {
