@@ -7,6 +7,7 @@ use actix_web::{
 use anyhow::{Context, anyhow};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use secrecy::{ExposeSecret, SecretString};
+use sha3::Digest;
 use sqlx::PgPool;
 
 use crate::{
@@ -95,10 +96,13 @@ pub async fn validate_credentials(
     credentials: &Credentials,
     pool: &PgPool,
 ) -> Result<uuid::Uuid, PublishError> {
+    let password_hash = sha3::Sha3_256::digest(credentials.password.expose_secret().as_bytes());
+    let password_hash = format!("{:x}", password_hash);
+
     let optional_row = sqlx::query!(
-        "SELECT user_id FROM users WHERE username = $1 AND password = $2;",
+        "SELECT user_id FROM users WHERE username = $1 AND password_hash = $2;",
         credentials.username,
-        credentials.password.expose_secret()
+        &password_hash,
     )
     .fetch_optional(pool)
     .await

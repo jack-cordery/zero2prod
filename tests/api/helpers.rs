@@ -5,6 +5,7 @@ use fake::{
 };
 use linkify::LinkFinder;
 use reqwest::{Client, Response};
+use sha3::{Digest, Sha3_256};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
 use url::Url;
@@ -29,6 +30,29 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
     }
 });
 
+pub struct TestUser {
+    username: String,
+    password: String,
+    user_id: Uuid,
+}
+
+impl TestUser {
+    pub fn generate() -> Self {
+        let name: String = NameWithTitle(EN).fake();
+        let password: String = Password(1..10).fake();
+        Self {
+            username: name,
+            password,
+            user_id: Uuid::new_v4(),
+        }
+    }
+
+    pub fn get_hash_password(&self) -> String {
+        let password_hash = Sha3_256::digest(&self.password);
+        format!("{:x}", password_hash)
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct ConfirmationLinks {
     pub html: reqwest::Url,
@@ -40,9 +64,22 @@ pub struct TestApp {
     pub connection_pool: PgPool,
     pub email_server: MockServer,
     pub port: u16,
+    pub test_user: TestUser,
 }
 
 impl TestApp {
+    pub async fn insert_test_user(&self) {
+        sqlx::query!(
+            r#"INSERT INTO users VALUES ($1, $2, $3);"#,
+            self.test_user.user_id,
+            self.test_user.username,
+            self.test_user.get_hash_password(),
+        )
+        .execute(&self.connection_pool)
+        .await
+        .expect("Failed to insert test user.");
+    }
+
     pub async fn post_subsription(&self, body: String) -> Response {
         let client = reqwest::Client::new();
         client
@@ -53,9 +90,9 @@ impl TestApp {
             .await
             .expect("should return")
     }
+
     pub fn get_confirmation_links(&self, request: &wiremock::Request) -> ConfirmationLinks {
         let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-
         let get_link = |s: &str| {
             let links: Vec<_> = LinkFinder::new()
                 .links(s)
@@ -77,41 +114,15 @@ impl TestApp {
     }
 
     pub async fn post_newsletter(&self, body: serde_json::Value) -> Response {
-        let (username, password) = get_test_user(&self.connection_pool).await;
-
         let client = Client::new();
         client
             .post(format!("{}/newsletters", &self.address))
-            .basic_auth(username, Some(password))
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .json(&body)
             .send()
             .await
             .expect("should return")
     }
-}
-
-pub async fn add_test_user(pool: &PgPool) {
-    let name: String = NameWithTitle(EN).fake();
-    let password: String = Password(1..10).fake();
-
-    let user_id: Uuid = Uuid::new_v4();
-    sqlx::query!(
-        r#"INSERT INTO users VALUES ($1, $2, $3);"#,
-        user_id,
-        name,
-        password
-    )
-    .execute(pool)
-    .await
-    .expect("Failed to insert test user.");
-}
-
-pub async fn get_test_user(pool: &PgPool) -> (String, String) {
-    let record = sqlx::query!(r#"SELECT username, password FROM users LIMIT 1;"#)
-        .fetch_one(pool)
-        .await
-        .expect("Failed to query database for test user");
-    (record.username, record.password)
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -144,8 +155,9 @@ pub async fn spawn_app() -> TestApp {
         connection_pool,
         email_server,
         port,
+        test_user: TestUser::generate(),
     };
-    add_test_user(&test_app.connection_pool).await;
+    test_app.insert_test_user().await;
     test_app
 }
 
