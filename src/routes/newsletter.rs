@@ -1,15 +1,12 @@
 use actix_web::{
     HttpRequest, HttpResponse, ResponseError,
     body::BoxBody,
-    http::{
-        StatusCode,
-        header::{HeaderMap, WWW_AUTHENTICATE},
-    },
+    http::header::{HeaderMap, WWW_AUTHENTICATE},
     web,
 };
 use anyhow::{Context, anyhow};
 use base64::{Engine, prelude::BASE64_STANDARD};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 
 use crate::{
@@ -94,7 +91,28 @@ pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::
     })
 }
 
-#[tracing::instrument(name = "Publish newsletter", skip(body, email_client), fields(newsletter_title=%body.title))]
+pub async fn validate_credentials(
+    credentials: &Credentials,
+    pool: &PgPool,
+) -> Result<uuid::Uuid, PublishError> {
+    let optional_row = sqlx::query!(
+        "SELECT user_id FROM users WHERE username = $1 AND password = $2;",
+        credentials.username,
+        credentials.password.expose_secret()
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| PublishError::UnexpectedError(anyhow!(e)))?;
+
+    let user_id = optional_row
+        .map(|row| row.user_id)
+        .ok_or_else(|| anyhow!("Invalid Username or password"))
+        .map_err(PublishError::AuthError)?;
+
+    Ok(user_id)
+}
+
+#[tracing::instrument(name = "Publish newsletter", skip(body, email_client), fields(newsletter_title=%body.title, username, user_id))]
 pub async fn publish_newsletter(
     body: web::Json<BodyData>,
     pool: web::Data<PgPool>,
@@ -102,6 +120,9 @@ pub async fn publish_newsletter(
     request: HttpRequest,
 ) -> Result<HttpResponse, PublishError> {
     let credentials = basic_authentication(request.headers()).map_err(PublishError::AuthError)?;
+    tracing::Span::current().record("username", &credentials.username);
+    let user_id = validate_credentials(&credentials, &pool).await?;
+    tracing::Span::current().record("user_id", user_id.to_string());
     let confirmed_subscriptions = get_confirmed_subscriptions(&pool).await?;
     for sub in confirmed_subscriptions {
         match sub {
