@@ -1,3 +1,7 @@
+use argon2::{
+    Argon2, PasswordHasher,
+    password_hash::{SaltString, rand_core::OsRng},
+};
 use fake::{
     Fake,
     faker::{internet::ar_sa::Password, name::raw::NameWithTitle},
@@ -5,7 +9,6 @@ use fake::{
 };
 use linkify::LinkFinder;
 use reqwest::{Client, Response};
-use sha3::{Digest, Sha3_256};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
 use url::Url;
@@ -48,8 +51,11 @@ impl TestUser {
     }
 
     pub fn get_hash_password(&self) -> String {
-        let password_hash = Sha3_256::digest(&self.password);
-        format!("{:x}", password_hash)
+        let salt = SaltString::generate(&mut OsRng);
+        Argon2::default()
+            .hash_password(self.password.as_bytes(), &salt)
+            .expect("Failed to hash password")
+            .to_string()
     }
 }
 
