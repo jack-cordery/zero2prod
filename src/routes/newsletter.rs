@@ -15,6 +15,7 @@ use crate::{
     domain::{SubscriberEmail, SubscriberStatus},
     email_client::EmailClient,
     routes::error_chain_fmt,
+    telementry::spawn_blocking_thread_with_span,
 };
 
 #[derive(serde::Deserialize)]
@@ -141,7 +142,7 @@ pub async fn validate_credentials(
         .map_err(PublishError::UnexpectedError)?
         .ok_or_else(|| PublishError::AuthError(anyhow!("Unknown username.")))?;
 
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_thread_with_span(move || {
         verify_password(expected_password_hash, credentials.password)
     })
     .await
