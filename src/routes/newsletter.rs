@@ -137,10 +137,22 @@ pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
 ) -> Result<uuid::Uuid, PublishError> {
-    let (user_id, expected_password_hash) = get_strored_credentials(&credentials.username, pool)
-        .await
-        .map_err(PublishError::UnexpectedError)?
-        .ok_or_else(|| PublishError::AuthError(anyhow!("Unknown username.")))?;
+    let mut user_id: Option<Uuid> = None;
+    let mut expected_password_hash = SecretString::new(
+        "$argon2id$v=19$m=15000,t=2,p=1$\
+gZiV/M1gPc22ElAH/Jh1Hw$\
+CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
+            .into(),
+    );
+
+    if let Some((stored_user_id, stored_expected_password_hash)) =
+        get_strored_credentials(&credentials.username, pool)
+            .await
+            .map_err(PublishError::UnexpectedError)?
+    {
+        user_id = Some(stored_user_id);
+        expected_password_hash = stored_expected_password_hash;
+    };
 
     spawn_blocking_thread_with_span(move || {
         verify_password(expected_password_hash, credentials.password)
@@ -148,7 +160,8 @@ pub async fn validate_credentials(
     .await
     .context("Spawning blocking thread failed.")
     .map_err(PublishError::UnexpectedError)??;
-    Ok(user_id)
+
+    user_id.ok_or(PublishError::AuthError(anyhow!("Unknown username.")))
 }
 
 #[tracing::instrument(name = "Publish newsletter", skip(body, email_client), fields(newsletter_title=%body.title, username, user_id))]

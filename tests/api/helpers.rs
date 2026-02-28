@@ -1,5 +1,5 @@
 use argon2::{
-    Argon2, PasswordHasher,
+    Argon2, Params, PasswordHasher,
     password_hash::{SaltString, rand_core::OsRng},
 };
 use fake::{
@@ -34,9 +34,9 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
 });
 
 pub struct TestUser {
-    username: String,
-    password: String,
-    user_id: Uuid,
+    pub username: String,
+    pub password: String,
+    pub user_id: Uuid,
 }
 
 impl TestUser {
@@ -52,10 +52,14 @@ impl TestUser {
 
     pub fn get_hash_password(&self) -> String {
         let salt = SaltString::generate(&mut OsRng);
-        Argon2::default()
-            .hash_password(self.password.as_bytes(), &salt)
-            .expect("Failed to hash password")
-            .to_string()
+        Argon2::new(
+            argon2::Algorithm::Argon2id,
+            argon2::Version::V0x13,
+            Params::new(15000, 2, 1, None).expect("Failed to initialise Argon2 params"),
+        )
+        .hash_password(self.password.as_bytes(), &salt)
+        .expect("Failed to hash password")
+        .to_string()
     }
 }
 

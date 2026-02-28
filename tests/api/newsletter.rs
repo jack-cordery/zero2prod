@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use wiremock::{
     Mock, ResponseTemplate,
     matchers::{method, path},
@@ -129,6 +130,35 @@ async fn rejection_of_request_no_authorization_header() {
         .await
         .expect("should return");
 
+    assert_eq!(401, response.status().as_u16());
+    assert_eq!(
+        r#"Basic realm="publish""#,
+        response.headers()["WWW-AUTHENTICATE"]
+    );
+}
+
+#[tokio::test]
+async fn invalid_password_is_rejected() {
+    // call po
+    let test_app = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let invalid_password = Uuid::new_v4().to_string();
+    assert_ne!(test_app.test_user.password, invalid_password);
+
+    let newsletter_body = serde_json::json!({"title": "Newsletter!",
+        "content":{
+            "text":"newsletter body as plain text",
+            "html":"<p> newsletter body as html </p>"
+        }
+    });
+    let response = client
+        .post(format!("{}/newsletters", test_app.address))
+        .basic_auth(&test_app.test_user.username, Some(&invalid_password))
+        .json(&newsletter_body)
+        .send()
+        .await
+        .expect("should return");
     assert_eq!(401, response.status().as_u16());
     assert_eq!(
         r#"Basic realm="publish""#,
