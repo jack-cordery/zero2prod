@@ -5,17 +5,15 @@ use actix_web::{
     web,
 };
 use anyhow::{Context, anyhow};
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use base64::{Engine, prelude::BASE64_STANDARD};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::{
+    authentication::{AuthError, Credentials, validate_credentials},
     domain::{SubscriberEmail, SubscriberStatus},
     email_client::EmailClient,
     routes::error_chain_fmt,
-    telementry::spawn_blocking_thread_with_span,
 };
 
 #[derive(serde::Deserialize)]
@@ -58,11 +56,6 @@ impl ResponseError for PublishError {
     }
 }
 
-pub struct Credentials {
-    username: String,
-    password: SecretString,
-}
-
 pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
     let auth_header = headers
         .get("Authorization")
@@ -94,76 +87,6 @@ pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::
     })
 }
 
-#[tracing::instrument(name = "Get stored credentials", skip(username, pool))]
-pub async fn get_strored_credentials(
-    username: &str,
-    pool: &PgPool,
-) -> Result<Option<(Uuid, SecretString)>, anyhow::Error> {
-    let optional_row = sqlx::query!(
-        r#"SELECT user_id, password_hash FROM users WHERE username = $1;"#,
-        username
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to perform a query to retrieve stored credentials")?;
-
-    Ok(optional_row.map(|row| (row.user_id, SecretString::from(row.password_hash))))
-}
-
-#[tracing::instrument(
-    name = "Verifying password",
-    skip(expected_password_hash, password_candidate)
-)]
-pub fn verify_password(
-    expected_password_hash: SecretString,
-    password_candidate: SecretString,
-) -> Result<(), PublishError> {
-    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
-        .context("Failed to parse hashed password from PHC string")
-        .map_err(PublishError::UnexpectedError)?;
-    tracing::info_span!("Verify password hash")
-        .in_scope(|| {
-            Argon2::default().verify_password(
-                password_candidate.expose_secret().as_bytes(),
-                &expected_password_hash,
-            )
-        })
-        .context("Failed to verigy password")
-        .map_err(PublishError::AuthError)
-}
-
-#[tracing::instrument(name = "Validate credentials", skip(credentials, pool))]
-pub async fn validate_credentials(
-    credentials: Credentials,
-    pool: &PgPool,
-) -> Result<uuid::Uuid, PublishError> {
-    let mut user_id: Option<Uuid> = None;
-    let mut expected_password_hash = SecretString::new(
-        "$argon2id$v=19$m=15000,t=2,p=1$\
-gZiV/M1gPc22ElAH/Jh1Hw$\
-CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
-            .into(),
-    );
-
-    if let Some((stored_user_id, stored_expected_password_hash)) =
-        get_strored_credentials(&credentials.username, pool)
-            .await
-            .map_err(PublishError::UnexpectedError)?
-    {
-        user_id = Some(stored_user_id);
-        expected_password_hash = stored_expected_password_hash;
-    };
-
-    spawn_blocking_thread_with_span(move || {
-        verify_password(expected_password_hash, credentials.password)
-    })
-    .await
-    .context("Spawning blocking thread failed.")
-    .map_err(PublishError::UnexpectedError)??;
-
-    user_id.ok_or(PublishError::AuthError(anyhow!("Unknown username.")))
-}
-
 #[tracing::instrument(name = "Publish newsletter", skip(body, email_client), fields(newsletter_title=%body.title, username, user_id))]
 pub async fn publish_newsletter(
     body: web::Json<BodyData>,
@@ -173,7 +96,12 @@ pub async fn publish_newsletter(
 ) -> Result<HttpResponse, PublishError> {
     let credentials = basic_authentication(request.headers()).map_err(PublishError::AuthError)?;
     tracing::Span::current().record("username", &credentials.username);
-    let user_id = validate_credentials(credentials, &pool).await?;
+    let user_id = validate_credentials(credentials, &pool)
+        .await
+        .map_err(|e| match e {
+            AuthError::InvalidCredentialsError(_) => PublishError::AuthError(e.into()),
+            AuthError::UnexpectedError(_) => PublishError::UnexpectedError(e.into()),
+        })?;
     tracing::Span::current().record("user_id", user_id.to_string());
     let confirmed_subscriptions = get_confirmed_subscriptions(&pool).await?;
     for sub in confirmed_subscriptions {
