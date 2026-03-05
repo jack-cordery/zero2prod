@@ -6,6 +6,7 @@ database:
   host: 127.0.0.1
 application:
   port: 8000
+  hmac_secret: "Some-really-long-and-super-secret-string"
 email_client: 
   authorization_token: "my-secret-token"
   timeout_millis: 10000
