@@ -8,13 +8,15 @@ use fake::{
     locales::EN,
 };
 use linkify::LinkFinder;
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, redirect};
+use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 use url::Url;
 use uuid::Uuid;
 use wiremock::MockServer;
 use zero2prod::{
+    authentication::Credentials,
     configuration::{DatabaseSettings, get_configuration},
     startup::{Application, get_connection_pool},
     telementry::{get_subscriber, init_subscriber},
@@ -75,6 +77,7 @@ pub struct TestApp {
     pub email_server: MockServer,
     pub port: u16,
     pub test_user: TestUser,
+    pub client: reqwest::Client,
 }
 
 impl TestApp {
@@ -91,8 +94,7 @@ impl TestApp {
     }
 
     pub async fn post_subsription(&self, body: String) -> Response {
-        let client = reqwest::Client::new();
-        client
+        self.client
             .post(format!("{}/subscribe", &self.address))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
@@ -124,8 +126,7 @@ impl TestApp {
     }
 
     pub async fn post_newsletter(&self, body: serde_json::Value) -> Response {
-        let client = Client::new();
-        client
+        self.client
             .post(format!("{}/newsletters", &self.address))
             .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .json(&body)
@@ -133,6 +134,41 @@ impl TestApp {
             .await
             .expect("should return")
     }
+
+    pub async fn post_login(&self, credentials: Credentials) -> Response {
+        let mut params = HashMap::new();
+        params.insert("username", credentials.username);
+        params.insert("password", credentials.password.expose_secret().into());
+
+        self.client
+            .post(format!("{}/login", &self.address))
+            .form(&params)
+            .send()
+            .await
+            .expect("should return")
+    }
+
+    pub async fn get_login_html(&self) -> String {
+        self.client
+            .get(format!("{}/login", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+            .text()
+            .await
+            .unwrap()
+    }
+}
+
+pub fn assert_redirect_to(response: &Response, location: &str) {
+    assert_eq!(303, response.status().as_u16());
+    assert_eq!(
+        Some(location),
+        response
+            .headers()
+            .get("LOCATION")
+            .map(|h| h.to_str().expect("invalid string"))
+    );
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -158,6 +194,12 @@ pub async fn spawn_app() -> TestApp {
     let connection_pool = get_connection_pool(&configuration.database);
     let address = format!("http://127.0.0.1:{}", application.port());
 
+    let client = Client::builder()
+        .redirect(redirect::Policy::none())
+        .cookie_store(true)
+        .build()
+        .expect("should build");
+
     tokio::spawn(application.run_until_stopped());
 
     let test_app = TestApp {
@@ -166,6 +208,7 @@ pub async fn spawn_app() -> TestApp {
         email_server,
         port,
         test_user: TestUser::generate(),
+        client,
     };
     test_app.insert_test_user().await;
     test_app

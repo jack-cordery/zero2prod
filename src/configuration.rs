@@ -42,7 +42,7 @@ pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub base_url: String,
-    pub hmac_secret: SecretString,
+    pub flash_secret: SecretString,
 }
 
 #[derive(Deserialize)]

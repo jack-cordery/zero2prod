@@ -1,7 +1,8 @@
 use std::net::TcpListener;
 
-use actix_web::{App, HttpServer, dev::Server, web};
-use secrecy::SecretString;
+use actix_web::{App, HttpServer, cookie::Key, dev::Server, web};
+use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, Pool, Postgres, postgres::PgPoolOptions};
 use tracing_actix_web::TracingLogger;
 use url::Url;
@@ -23,16 +24,22 @@ pub fn run(
     connection_pool: PgPool,
     email_client: EmailClient,
     application_base_url: String,
-    hmac_secret: SecretString,
+    flash_secret: SecretString,
 ) -> Result<Server, std::io::Error> {
     let conn = web::Data::new(connection_pool);
     let email_client = web::Data::new(email_client);
     let application_base_url = web::Data::new(ApplicationBaseUrl(application_base_url));
-    let hmac_secret = web::Data::new(HmacSecret(hmac_secret));
+
+    let cookie_key =
+        Key::from(&hex::decode(flash_secret.expose_secret()).expect("Invalid flash secret"));
+
+    let message_store = CookieMessageStore::builder(cookie_key).build();
+    let flash_framework = FlashMessagesFramework::builder(message_store).build();
 
     let server = HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
+            .wrap(flash_framework.clone())
             .route("/", web::get().to(home))
             .route("/health", web::get().to(health_check))
             .route("/subscribe", web::post().to(subscribe))
@@ -46,7 +53,6 @@ pub fn run(
             .app_data(conn.clone())
             .app_data(email_client.clone())
             .app_data(application_base_url.clone())
-            .app_data(hmac_secret.clone())
     })
     .listen(listener)?
     .run();
@@ -83,13 +89,13 @@ impl Application {
         let application_base_url = configuration.application.base_url.clone();
         let listener = TcpListener::bind(application_address)?;
         let port = listener.local_addr().expect("should be valid").port();
-        let hmac_secret = configuration.application.hmac_secret.clone();
+        let flash_secret = configuration.application.flash_secret.clone();
         let server = run(
             listener,
             connection,
             email_client,
             application_base_url,
-            hmac_secret,
+            flash_secret,
         )?;
 
         Ok(Self { port, server })

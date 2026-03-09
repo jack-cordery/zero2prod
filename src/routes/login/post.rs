@@ -1,6 +1,5 @@
-use std::fmt;
-
-use actix_web::{HttpResponse, error::InternalError, http::StatusCode};
+use actix_web::{HttpResponse, error::InternalError};
+use actix_web_flash_messages::FlashMessage;
 use secrecy::SecretString;
 use serde::Deserialize;
 use sqlx::PgPool;
@@ -8,8 +7,7 @@ use tracing::{field::Empty, instrument};
 
 use crate::{
     authentication::{AuthError, Credentials, validate_credentials},
-    routes::{error_chain_fmt, login::get::ErrorQuery},
-    startup::HmacSecret,
+    routes::error_chain_fmt,
 };
 
 #[derive(Deserialize)]
@@ -27,11 +25,10 @@ impl From<LoginForm> for Credentials {
     }
 }
 
-#[instrument(name="Handling post login request", skip(form, pool, hmac_secret), fields(username=Empty, user_id=Empty))]
+#[instrument(name="Handling post login request", skip(form, pool), fields(username=Empty, user_id=Empty))]
 pub async fn login(
     form: actix_web::web::Form<LoginForm>,
     pool: actix_web::web::Data<PgPool>,
-    hmac_secret: actix_web::web::Data<HmacSecret>,
 ) -> Result<HttpResponse, InternalError<LoginError>> {
     tracing::Span::current().record("username", tracing::field::display(&form.0.username));
     match validate_credentials(form.0.into(), &pool).await {
@@ -46,32 +43,28 @@ pub async fn login(
                 AuthError::InvalidCredentialsError(e) => LoginError::AuthError(e),
                 AuthError::UnexpectedError(e) => LoginError::UnexpectedError(e),
             };
-            let query =
-                ErrorQuery::from_error(e.to_string(), &hmac_secret).expect("Invalid error string");
 
-            Err(InternalError::from_response(
-                e,
-                HttpResponse::build(StatusCode::SEE_OTHER)
-                    .insert_header((
-                        actix_web::http::header::LOCATION,
-                        format!("/login?{}", query.as_string()),
-                    ))
-                    .finish(),
-            ))
+            FlashMessage::error(e.to_string()).send();
+
+            let response = HttpResponse::SeeOther()
+                .insert_header((actix_web::http::header::LOCATION, "/login"))
+                .finish();
+
+            Err(InternalError::from_response(e, response))
         }
     }
 }
 
 #[derive(thiserror::Error)]
 pub enum LoginError {
-    #[error("Authentication Failed")]
+    #[error("Authentication failed")]
     AuthError(anyhow::Error),
     #[error("Something went wrong")]
     UnexpectedError(anyhow::Error),
 }
 
 impl std::fmt::Debug for LoginError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         error_chain_fmt(self, f)
     }
 }
