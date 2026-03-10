@@ -8,11 +8,9 @@ if [[ -n $DOCKER_CONTAINER ]]; then
   exit 1
 fi
 
-if docker start redis_zero2prod >/dev/null 2>&1; then
-  echo "Redis is running on port 6379"
-else 
-  docker run --rm -d --name redis_zero2prod -p 6379:6379 redis:latest
-  echo "Redis is running on port 6379"
+if ! docker start valkey_zero2prod >/dev/null 2>&1; then
+  docker run --rm -d --name valkey_zero2prod -p 6379:6379 valkey/valkey:latest
 fi 
 
+echo "Valkey is running on port 6379"
 exit 0
