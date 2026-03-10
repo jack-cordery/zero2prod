@@ -4,7 +4,7 @@ set -eo pipefail
 
 DOCKER_CONTAINER=$(docker ps --filter publish=6379 --format '{{.ID}}')
 if [[ -n $DOCKER_CONTAINER ]]; then
-  echo >&2 "Redis ports already in use in another container; Stop $DOCKER_CONTAINER before continuing."
+  echo >&2 "Valkey ports already in use in another container; Stop $DOCKER_CONTAINER before continuing."
   exit 1
 fi
 
