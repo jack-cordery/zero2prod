@@ -5,7 +5,6 @@ use crate::helpers::{assert_redirect_to, spawn_app};
 
 #[tokio::test]
 pub async fn dashboard_redirects_to_login_page_given_invalid_session() {
-    // do
     let test_app = spawn_app().await;
 
     let response = test_app.get_admin_dashboard().await;
