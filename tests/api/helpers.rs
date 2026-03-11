@@ -158,6 +158,14 @@ impl TestApp {
             .await
             .unwrap()
     }
+
+    pub async fn get_admin_dashboard(&self) -> Response {
+        self.client
+            .get(format!("{}/admin/dashboard", self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+    }
 }
 
 pub fn assert_redirect_to(response: &Response, location: &str) {

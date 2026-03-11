@@ -6,3 +6,4 @@ database:
 email_client:
   base_url: "http://localhost"
   sender_email: "test@gmail.com"
+valkey_uri: "redis://127.0.0.1:6379"

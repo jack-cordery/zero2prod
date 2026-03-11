@@ -1,5 +1,6 @@
 use actix_web::{HttpResponse, error::InternalError};
 use actix_web_flash_messages::FlashMessage;
+use anyhow::Context;
 use secrecy::SecretString;
 use serde::Deserialize;
 use sqlx::PgPool;
@@ -8,6 +9,7 @@ use tracing::{field::Empty, instrument};
 use crate::{
     authentication::{AuthError, Credentials, validate_credentials},
     routes::error_chain_fmt,
+    session_state::TypedSession,
 };
 
 #[derive(Deserialize)]
@@ -25,17 +27,23 @@ impl From<LoginForm> for Credentials {
     }
 }
 
-#[instrument(name="Handling post login request", skip(form, pool), fields(username=Empty, user_id=Empty))]
+#[instrument(name="Handling post login request", skip(form, pool, session), fields(username=Empty, user_id=Empty))]
 pub async fn login(
     form: actix_web::web::Form<LoginForm>,
     pool: actix_web::web::Data<PgPool>,
+    session: TypedSession,
 ) -> Result<HttpResponse, InternalError<LoginError>> {
     tracing::Span::current().record("username", tracing::field::display(&form.0.username));
     match validate_credentials(form.0.into(), &pool).await {
         Ok(user_id) => {
             tracing::Span::current().record("user_id", tracing::field::display(user_id));
+            session.renew();
+            session
+                .insert_user_id(user_id)
+                .context("Failed to insert session into valkey")
+                .map_err(|e| login_redirect(LoginError::UnexpectedError(e)))?;
             Ok(HttpResponse::SeeOther()
-                .insert_header((actix_web::http::header::LOCATION, "/"))
+                .insert_header((actix_web::http::header::LOCATION, "/admin/dashboard"))
                 .finish())
         }
         Err(e) => {
@@ -44,15 +52,17 @@ pub async fn login(
                 AuthError::UnexpectedError(e) => LoginError::UnexpectedError(e),
             };
 
-            FlashMessage::error(e.to_string()).send();
-
-            let response = HttpResponse::SeeOther()
-                .insert_header((actix_web::http::header::LOCATION, "/login"))
-                .finish();
-
-            Err(InternalError::from_response(e, response))
+            Err(login_redirect(e))
         }
     }
+}
+
+pub fn login_redirect(e: LoginError) -> InternalError<LoginError> {
+    FlashMessage::error(e.to_string()).send();
+    let response = HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/login"))
+        .finish();
+    InternalError::from_response(e, response)
 }
 
 #[derive(thiserror::Error)]

@@ -1,5 +1,6 @@
 use std::net::TcpListener;
 
+use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 use actix_web::{App, HttpServer, cookie::Key, dev::Server, web};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
@@ -11,7 +12,8 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
     routes::{
-        health_check, home, login, login_form, publish_newsletter, subscribe, subscriptions_confirm,
+        dashboard, health_check, home, login, login_form, publish_newsletter, subscribe,
+        subscriptions_confirm,
     },
 };
 
@@ -24,6 +26,7 @@ pub fn run(
     connection_pool: PgPool,
     email_client: EmailClient,
     application_base_url: String,
+    valkey_session_store: RedisSessionStore,
     flash_secret: SecretString,
 ) -> Result<Server, std::io::Error> {
     let conn = web::Data::new(connection_pool);
@@ -33,13 +36,17 @@ pub fn run(
     let cookie_key =
         Key::from(&hex::decode(flash_secret.expose_secret()).expect("Invalid flash secret"));
 
-    let message_store = CookieMessageStore::builder(cookie_key).build();
+    let message_store = CookieMessageStore::builder(cookie_key.clone()).build();
     let flash_framework = FlashMessagesFramework::builder(message_store).build();
 
     let server = HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
             .wrap(flash_framework.clone())
+            .wrap(SessionMiddleware::new(
+                valkey_session_store.clone(),
+                cookie_key.clone(),
+            ))
             .route("/", web::get().to(home))
             .route("/health", web::get().to(health_check))
             .route("/subscribe", web::post().to(subscribe))
@@ -50,6 +57,7 @@ pub fn run(
             .route("/newsletters", web::post().to(publish_newsletter))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
+            .route("/admin/dashboard", web::get().to(dashboard))
             .app_data(conn.clone())
             .app_data(email_client.clone())
             .app_data(application_base_url.clone())
@@ -90,11 +98,15 @@ impl Application {
         let listener = TcpListener::bind(application_address)?;
         let port = listener.local_addr().expect("should be valid").port();
         let flash_secret = configuration.application.flash_secret.clone();
+        let valkey_store = RedisSessionStore::new(configuration.valkey_uri.expose_secret())
+            .await
+            .expect("Failed to connect to Valkey");
         let server = run(
             listener,
             connection,
             email_client,
             application_base_url,
+            valkey_store,
             flash_secret,
         )?;
 
