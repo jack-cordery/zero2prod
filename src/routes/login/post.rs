@@ -41,7 +41,11 @@ pub async fn login(
             session
                 .insert_user_id(user_id)
                 .context("Failed to insert session into valkey")
-                .map_err(|e| login_redirect(LoginError::UnexpectedError(e)))?;
+                .map_err(|e| {
+                    let e = LoginError::UnexpectedError(e);
+                    tracing::error!(error = ?e, "Failed to insert session into valkey");
+                    login_redirect(e)
+                })?;
             Ok(HttpResponse::SeeOther()
                 .insert_header((actix_web::http::header::LOCATION, "/admin/dashboard"))
                 .finish())
@@ -51,7 +55,7 @@ pub async fn login(
                 AuthError::InvalidCredentialsError(e) => LoginError::AuthError(e),
                 AuthError::UnexpectedError(e) => LoginError::UnexpectedError(e),
             };
-
+            tracing::error!(error = ?e, "Login failed");
             Err(login_redirect(e))
         }
     }
