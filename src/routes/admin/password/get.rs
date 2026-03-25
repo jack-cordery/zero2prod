@@ -28,12 +28,12 @@ pub async fn password_form(flash_messages: IncomingFlashMessages) -> HttpRespons
 			<form action="/admin/password" method="post">
     				<label>
 					Current
-					<input  type="password" placeholder="New Password" name="current-password">
+					<input  type="password" placeholder="New Password" name="current_password">
 					</input>
     				</label>
     				<label>
 					New password
-					<input  type="password" placeholder="New Password" name="new-password">
+					<input  type="password" placeholder="New Password" name="new_password">
 					</input>
     				</label>
     				<label>

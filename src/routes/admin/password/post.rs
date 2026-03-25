@@ -17,13 +17,13 @@ use crate::authentication::{
 use crate::routes::error_chain_fmt;
 
 #[derive(Deserialize)]
-pub struct NewPassword {
+pub struct NewPasswordForm {
     current_password: SecretString,
     new_password: SecretString,
     confirmation: SecretString,
 }
 
-impl NewPassword {
+impl NewPasswordForm {
     pub async fn validate(&self, username: &str, pool: &PgPool) -> Result<(), PasswordError> {
         if self.new_password.expose_secret() == self.confirmation.expose_secret() {
             match validate_credentials(
@@ -48,7 +48,7 @@ impl NewPassword {
 
 #[instrument(name = "Handling change password", skip(form, pool))]
 pub async fn change_password(
-    form: web::Form<NewPassword>,
+    form: web::Form<NewPasswordForm>,
     user_id: ReqData<UserId>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
