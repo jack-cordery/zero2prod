@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "ALTER TABLE users DROP COLUMN password_hash;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "576f3f359606f99036dd6c70d1c99b3315a18498f67b8421b0894cc302be500e"
+}

@@ -135,9 +135,9 @@ impl TestApp {
             .expect("should return")
     }
 
-    pub async fn post_login(&self, credentials: Credentials) -> Response {
+    pub async fn post_login(&self, credentials: &Credentials) -> Response {
         let mut params = HashMap::new();
-        params.insert("username", credentials.username);
+        params.insert("username", credentials.username.to_owned());
         params.insert("password", credentials.password.expose_secret().into());
 
         self.client
@@ -165,6 +165,37 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute get request")
+    }
+    pub async fn get_change_password(&self) -> Response {
+        self.client
+            .get(format!("{}/admin/password", self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+    }
+
+    pub async fn get_change_password_html(&self) -> String {
+        self.client
+            .get(format!("{}/admin/password", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+            .text()
+            .await
+            .unwrap()
+    }
+
+    pub async fn post_change_password(&self, password: &str, confirmation: &str) -> Response {
+        let mut params = HashMap::new();
+        params.insert("password", password);
+        params.insert("confirmation", confirmation);
+
+        self.client
+            .post(format!("{}/admin/password", self.address))
+            .form(&params)
+            .send()
+            .await
+            .expect("Failed to execute post request")
     }
 }
 

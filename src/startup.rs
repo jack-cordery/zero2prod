@@ -1,7 +1,21 @@
-use std::net::TcpListener;
+use anyhow::anyhow;
+use std::{
+    fmt::{Debug, Display},
+    net::TcpListener,
+};
+use tracing::instrument;
 
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
-use actix_web::{App, HttpServer, cookie::Key, dev::Server, web};
+use actix_web::{
+    App, HttpResponse, HttpServer,
+    body::MessageBody,
+    cookie::Key,
+    dev::{Server, ServiceRequest, ServiceResponse},
+    error::{ErrorInternalServerError, InternalError},
+    http::header::LOCATION,
+    middleware::{Next, from_fn},
+    web,
+};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, Pool, Postgres, postgres::PgPoolOptions};
@@ -12,9 +26,10 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
     routes::{
-        dashboard, health_check, home, login, login_form, publish_newsletter, subscribe,
-        subscriptions_confirm,
+        change_password, dashboard, health_check, home, login, login_form, password_form,
+        publish_newsletter, subscribe, subscriptions_confirm,
     },
+    session_state::TypedSession,
 };
 
 pub struct ApplicationBaseUrl(pub String);
@@ -57,7 +72,13 @@ pub fn run(
             .route("/newsletters", web::post().to(publish_newsletter))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
-            .route("/admin/dashboard", web::get().to(dashboard))
+            .service(
+                web::scope("/admin")
+                    .wrap(from_fn(admin_protection))
+                    .route("/dashboard", web::get().to(dashboard))
+                    .route("/password", web::get().to(password_form))
+                    .route("/password", web::post().to(change_password)),
+            )
             .app_data(conn.clone())
             .app_data(email_client.clone())
             .app_data(application_base_url.clone())
@@ -125,4 +146,30 @@ impl Application {
 pub fn get_connection_pool(database_settings: &DatabaseSettings) -> Pool<Postgres> {
     let psql_connection_uri = database_settings.get_connection_uri();
     PgPoolOptions::new().connect_lazy_with(psql_connection_uri)
+}
+
+fn e500<T>(error: T) -> actix_web::Error
+where
+    T: Debug + Display + 'static,
+{
+    ErrorInternalServerError(error)
+}
+
+#[instrument(name = "checking user privilege", skip(req, next, session))]
+async fn admin_protection(
+    session: TypedSession,
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    if session.get_user_id().map_err(e500)?.is_some() {
+        return next.call(req).await;
+    } else {
+        Err(InternalError::from_response(
+            anyhow!("User is not logged in"),
+            HttpResponse::SeeOther()
+                .insert_header((LOCATION, "/login"))
+                .finish(),
+        )
+        .into())
+    }
 }

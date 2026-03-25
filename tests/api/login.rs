@@ -14,7 +14,7 @@ pub async fn a_flash_error_message_is_returned_on_failure() {
         username: "random-username".into(),
         password: SecretString::new("random-password".into()),
     };
-    let response = test_app.post_login(invalid_credentials).await;
+    let response = test_app.post_login(&invalid_credentials).await;
 
     // Assert
     assert_redirect_to(&response, "/login");
@@ -37,7 +37,7 @@ pub async fn login_redirects_to_admin_dashboard_on_success() {
         password: SecretString::from(test_app.test_user.password.clone()),
     };
 
-    let response = test_app.post_login(test_credentials).await;
+    let response = test_app.post_login(&test_credentials).await;
 
     let session_cookie_cookies: Vec<&str> = response
         .headers()
@@ -48,6 +48,8 @@ pub async fn login_redirects_to_admin_dashboard_on_success() {
         .collect();
 
     assert!(session_cookie_cookies.len() == 1);
+
+    dbg!(&response);
 
     assert_redirect_to(&response, "/admin/dashboard");
 }

@@ -1,5 +1,8 @@
 use anyhow::{Context, anyhow};
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::{
+    Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{SaltString, rand_core::OsRng},
+};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -31,6 +34,7 @@ pub async fn validate_credentials(
     pool: &PgPool,
 ) -> Result<Uuid, AuthError> {
     let mut user_id: Option<Uuid> = None;
+
     let mut expected_password_hash = SecretString::new(
         "$argon2id$v=19$m=15000,t=2,p=1$\
 gZiV/M1gPc22ElAH/Jh1Hw$\
@@ -95,4 +99,39 @@ pub fn verify_password(
         })
         .context("Failed to verigy password")
         .map_err(AuthError::InvalidCredentialsError)
+}
+
+pub fn generate_password_hash(password: SecretString) -> String {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::new(
+        argon2::Algorithm::Argon2id,
+        argon2::Version::V0x13,
+        Params::new(15000, 2, 1, None).expect("Failed to initialise Argon2 params"),
+    )
+    .hash_password(password.expose_secret().as_bytes(), &salt)
+    .expect("Failed to hash password")
+    .to_string()
+}
+
+#[tracing::instrument(name = "Updating password in database", skip(new_password, pool))]
+pub async fn update_password(
+    user_id: Uuid,
+    new_password: SecretString,
+    pool: &PgPool,
+) -> Result<(), AuthError> {
+    let password_hash = generate_password_hash(new_password);
+    sqlx::query!(
+        r#"
+            UPDATE users
+            SET password_hash=$2
+            WHERE user_id=$1; 
+"#,
+        user_id,
+        password_hash
+    )
+    .execute(pool)
+    .await
+    .context("Failed to update password in database")
+    .map_err(AuthError::UnexpectedError)?;
+    Ok(())
 }

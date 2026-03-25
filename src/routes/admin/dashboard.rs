@@ -1,8 +1,12 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
+use std::fmt::Write;
+
+use actix_web::HttpResponse;
 use actix_web::error::ErrorInternalServerError;
-use actix_web::{HttpResponse, http::header::LOCATION};
+use actix_web_flash_messages::IncomingFlashMessages;
+use actix_web_flash_messages::Level;
 use anyhow::Context;
 use sqlx::PgPool;
 use tracing::instrument;
@@ -17,19 +21,30 @@ where
     ErrorInternalServerError(error)
 }
 
-#[instrument(name = "Handling GET admin/dashboard", skip(pool, session))]
+#[instrument(
+    name = "Handling GET admin/dashboard",
+    skip(pool, session, flash_messages)
+)]
 pub async fn dashboard(
     pool: actix_web::web::Data<PgPool>,
     session: TypedSession,
+    flash_messages: IncomingFlashMessages,
 ) -> Result<HttpResponse, actix_web::Error> {
-    if let Some(user_id) = session
+    let mut messages: String = "".into();
+
+    for message in flash_messages.iter().filter(|m| m.level() == Level::Info) {
+        writeln!(messages, "<p><i>{}</i></p>", message.content())
+            .expect("Failed to write message into buffer");
+    }
+    let user_id = session
         .get_user_id()
         .context("Failed to retrieve session from valkey")
         .map_err(e500)?
-    {
-        let username = get_user(user_id, &pool).await.map_err(e500)?;
-        let body = format!(
-            r#"
+        .expect("User not found even after middleware validation");
+
+    let username = get_user(user_id, &pool).await.map_err(e500)?;
+    let body = format!(
+        r#"
                 <!DOCTYPE html>
                 <html lang="en">
                 <head>
@@ -37,16 +52,18 @@ pub async fn dashboard(
                 <title>Admin dashboard</title>
                 </head>
                 <body>
+                {}
                 <p>Welcome {username}!</p>
+                <a href="/admin/password">
+                    <button>
+                        Change password
+                    </button>
+                </a>
                 </body>
-                </html>"#
-        );
-        return Ok(HttpResponse::Ok().body(body));
-    } else {
-        return Ok(HttpResponse::SeeOther()
-            .insert_header((LOCATION, "/login"))
-            .finish());
-    };
+                </html>"#,
+        messages
+    );
+    return Ok(HttpResponse::Ok().body(body));
 }
 
 #[instrument(name = "Get username from user_id", skip(pool))]
