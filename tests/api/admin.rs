@@ -29,19 +29,24 @@ pub async fn change_password_request_redirects_to_login_page_given_invalid_sessi
     let valid_confirmation = "12345";
 
     let response = test_app
-        .post_change_password(new_password, valid_confirmation)
+        .post_change_password(
+            &test_app.test_user.password,
+            new_password,
+            valid_confirmation,
+        )
         .await;
 
     assert_redirect_to(&response, "/login");
 }
 
 #[tokio::test]
-pub async fn change_password_request_redirects_to_change_password_page_with_flash_message_on_unexpected_error()
+pub async fn incorrect_current_password_request_redirects_to_change_password_page_with_flash_message()
  {
     let test_app = spawn_app().await;
 
+    let incorrect_current_password = "";
     let new_password = "12345";
-    let valid_confirmation = "12345";
+    let invalid_confirmation = "12345";
 
     let valid_credentials = Credentials {
         username: test_app.test_user.username.clone(),
@@ -50,23 +55,22 @@ pub async fn change_password_request_redirects_to_change_password_page_with_flas
 
     test_app.post_login(&valid_credentials).await;
 
-    sqlx::query!("ALTER TABLE users DROP COLUMN password_hash;")
-        .execute(&test_app.connection_pool)
-        .await
-        .expect("Failed to drop column");
-
     let response = test_app
-        .post_change_password(new_password, valid_confirmation)
+        .post_change_password(
+            incorrect_current_password,
+            new_password,
+            invalid_confirmation,
+        )
         .await;
 
     assert_redirect_to(&response, "/admin/password");
 
     let response_html = test_app.get_change_password_html().await;
-    assert!(response_html.contains("An unexpected error occured. Please try again."))
+    assert!(response_html.contains("Invalid credentials"))
 }
 
 #[tokio::test]
-pub async fn invalid_change_password_request_redirects_to_change_password_page_with_flash_message()
+pub async fn mismatched_new_password_request_redirects_to_change_password_page_with_flash_message()
 {
     let test_app = spawn_app().await;
 
@@ -81,7 +85,11 @@ pub async fn invalid_change_password_request_redirects_to_change_password_page_w
     test_app.post_login(&valid_credentials).await;
 
     let response = test_app
-        .post_change_password(new_password, invalid_confirmation)
+        .post_change_password(
+            &test_app.test_user.password,
+            new_password,
+            invalid_confirmation,
+        )
         .await;
 
     assert_redirect_to(&response, "/admin/password");
@@ -105,7 +113,11 @@ pub async fn change_password_request_redirects_to_admin_page_given_valid_confirm
     test_app.post_login(&valid_credentials).await;
 
     let response = test_app
-        .post_change_password(new_password, valid_confirmation)
+        .post_change_password(
+            &test_app.test_user.password,
+            new_password,
+            valid_confirmation,
+        )
         .await;
 
     assert_redirect_to(&response, "/admin/dashboard");
@@ -127,7 +139,11 @@ pub async fn change_password_request_does_so_given_valid_confirmation() {
     test_app.post_login(&valid_credentials).await;
 
     test_app
-        .post_change_password(new_password, valid_confirmation)
+        .post_change_password(
+            &test_app.test_user.password,
+            new_password,
+            valid_confirmation,
+        )
         .await;
 
     let valid_credentials = Credentials {

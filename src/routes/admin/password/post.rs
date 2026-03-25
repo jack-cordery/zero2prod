@@ -1,34 +1,43 @@
-use std::fmt::{Debug, Display};
-
 use actix_web::{
     HttpResponse,
-    error::{ErrorInternalServerError, InternalError},
-    web,
+    error::InternalError,
+    web::{self, ReqData},
 };
 use actix_web_flash_messages::FlashMessage;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use sqlx::PgPool;
-use tracing::{field::Empty, instrument};
+use tracing::instrument;
 
-use crate::{
-    authentication::{AuthError, update_password},
-    routes::error_chain_fmt,
-    session_state::TypedSession,
+use crate::authentication::{
+    AuthError, Credentials, UserId, get_user, update_password, validate_credentials,
 };
+use crate::routes::error_chain_fmt;
 
 #[derive(Deserialize)]
 pub struct NewPassword {
-    password: SecretString,
+    current_password: SecretString,
+    new_password: SecretString,
     confirmation: SecretString,
 }
 
 impl NewPassword {
-    pub fn verify(&self) -> Result<(), PasswordError> {
-        if self.password.expose_secret() == self.confirmation.expose_secret() {
-            Ok(())
+    pub async fn validate(&self, username: &str, pool: &PgPool) -> Result<(), PasswordError> {
+        if self.new_password.expose_secret() == self.confirmation.expose_secret() {
+            match validate_credentials(
+                Credentials {
+                    username: username.to_string(),
+                    password: self.current_password.clone(),
+                },
+                pool,
+            )
+            .await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(PasswordError::InvalidCredentials(anyhow!(e.to_string()))),
+            }
         } else {
             Err(PasswordError::PasswordMismatchError(anyhow!(
                 "password and confirmation don't match"
@@ -37,28 +46,28 @@ impl NewPassword {
     }
 }
 
-#[instrument(name="Handling change password", skip(form, session, pool), fields(user_id=Empty))]
+#[instrument(name = "Handling change password", skip(form, pool))]
 pub async fn change_password(
     form: web::Form<NewPassword>,
-    session: TypedSession,
+    user_id: ReqData<UserId>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    form.0.verify().map_err(unexpected_redirect)?;
+    let user_id = user_id.into_inner();
+    let username = get_user(*user_id, &pool)
+        .await
+        .map_err(|e| error_redirect(PasswordError::UnexpectedError(e)))?;
 
-    let user_id = session
-        .get_user_id()
-        .map_err(e500)?
-        .context("user_id not available from session")
-        .map_err(|e| unexpected_redirect(PasswordError::UnexpectedError(e)))?;
+    form.0
+        .validate(&username, &pool)
+        .await
+        .map_err(error_redirect)?;
 
-    tracing::Span::current().record("user_id", user_id.to_string());
-
-    update_password(user_id, form.0.password, &pool)
+    update_password(*user_id, form.0.new_password, &pool)
         .await
         .map_err(|e| match e {
-            AuthError::UnexpectedError(e) => unexpected_redirect(PasswordError::UnexpectedError(e)),
+            AuthError::UnexpectedError(e) => error_redirect(PasswordError::UnexpectedError(e)),
             AuthError::InvalidCredentialsError(e) => {
-                auth_redirect(PasswordError::InvalidCredentials(e))
+                error_redirect(PasswordError::InvalidCredentials(e))
             }
         })?;
 
@@ -69,19 +78,12 @@ pub async fn change_password(
     Ok(response)
 }
 
-pub fn auth_redirect(e: PasswordError) -> InternalError<PasswordError> {
-    FlashMessage::error(e.to_string()).send();
-    let response = HttpResponse::SeeOther()
-        .insert_header((actix_web::http::header::LOCATION, "/login"))
-        .finish();
-    InternalError::from_response(e, response)
-}
-
-pub fn unexpected_redirect(e: PasswordError) -> InternalError<PasswordError> {
+pub fn error_redirect(e: PasswordError) -> InternalError<PasswordError> {
     FlashMessage::error(e.to_string()).send();
     let response = HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/admin/password"))
         .finish();
+
     InternalError::from_response(e, response)
 }
 
@@ -99,11 +101,4 @@ impl std::fmt::Debug for PasswordError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         error_chain_fmt(self, f)
     }
-}
-
-fn e500<T>(error: T) -> actix_web::Error
-where
-    T: Debug + Display + 'static,
-{
-    ErrorInternalServerError(error)
 }

@@ -10,8 +10,8 @@ use actix_web_flash_messages::Level;
 use anyhow::Context;
 use sqlx::PgPool;
 use tracing::instrument;
-use uuid::Uuid;
 
+use crate::authentication::get_user;
 use crate::session_state::TypedSession;
 
 fn e500<T>(error: T) -> actix_web::Error
@@ -64,14 +64,4 @@ pub async fn dashboard(
         messages
     );
     return Ok(HttpResponse::Ok().body(body));
-}
-
-#[instrument(name = "Get username from user_id", skip(pool))]
-async fn get_user(user_id: Uuid, pool: &PgPool) -> Result<String, anyhow::Error> {
-    let username = sqlx::query!("SELECT username FROM users WHERE user_id=$1", user_id)
-        .fetch_one(pool)
-        .await
-        .context("Failed to query database")?
-        .username;
-    Ok(username)
 }

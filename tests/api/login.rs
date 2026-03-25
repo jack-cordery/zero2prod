@@ -49,7 +49,5 @@ pub async fn login_redirects_to_admin_dashboard_on_success() {
 
     assert!(session_cookie_cookies.len() == 1);
 
-    dbg!(&response);
-
     assert_redirect_to(&response, "/admin/dashboard");
 }

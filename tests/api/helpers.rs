@@ -185,9 +185,15 @@ impl TestApp {
             .unwrap()
     }
 
-    pub async fn post_change_password(&self, password: &str, confirmation: &str) -> Response {
+    pub async fn post_change_password(
+        &self,
+        current_password: &str,
+        new_password: &str,
+        confirmation: &str,
+    ) -> Response {
         let mut params = HashMap::new();
-        params.insert("password", password);
+        params.insert("current_password", current_password);
+        params.insert("new_password", new_password);
         params.insert("confirmation", confirmation);
 
         self.client

@@ -10,6 +10,7 @@ pub async fn password_form(flash_messages: IncomingFlashMessages) -> HttpRespons
         writeln!(error_html, "<p><i>{}<p><i>", message.content())
             .expect("Failed to load info string");
     }
+    dbg!(&error_html);
     let body = format!(
         r#"
 <!DOCTYPE HTML>
@@ -26,8 +27,13 @@ pub async fn password_form(flash_messages: IncomingFlashMessages) -> HttpRespons
 			</p>
 			<form action="/admin/password" method="post">
     				<label>
+					Current
+					<input  type="password" placeholder="New Password" name="current-password">
+					</input>
+    				</label>
+    				<label>
 					New password
-					<input  type="password" placeholder="New Password" name="password">
+					<input  type="password" placeholder="New Password" name="new-password">
 					</input>
     				</label>
     				<label>

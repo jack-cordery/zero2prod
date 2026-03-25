@@ -1,8 +1,12 @@
 use anyhow::anyhow;
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
+use uuid::Uuid;
 
 use actix_web::{
-    HttpResponse,
+    HttpMessage, HttpResponse,
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     error::{ErrorInternalServerError, InternalError},
@@ -13,13 +17,26 @@ use tracing::instrument;
 
 use crate::session_state::TypedSession;
 
+#[derive(Debug, Clone)]
+pub struct UserId(Uuid);
+
+impl Deref for UserId {
+    type Target = Uuid;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
 #[instrument(name = "checking user privilege", skip(req, next, session))]
 pub async fn admin_protection(
     session: TypedSession,
-    req: ServiceRequest,
+    mut req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
-    if session.get_user_id().map_err(e500)?.is_some() {
+    if let Some(user_id) = session.get_user_id().map_err(e500)? {
+        let (request, _) = req.parts_mut();
+        request.extensions_mut().insert(UserId(user_id));
         return next.call(req).await;
     } else {
         Err(InternalError::from_response(

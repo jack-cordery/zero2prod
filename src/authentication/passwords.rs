@@ -5,6 +5,7 @@ use argon2::{
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{routes::error_chain_fmt, telementry::spawn_blocking_thread_with_span};
@@ -134,4 +135,14 @@ pub async fn update_password(
     .context("Failed to update password in database")
     .map_err(AuthError::UnexpectedError)?;
     Ok(())
+}
+
+#[instrument(name = "Get username from user_id", skip(pool))]
+pub async fn get_user(user_id: Uuid, pool: &PgPool) -> Result<String, anyhow::Error> {
+    let username = sqlx::query!("SELECT username FROM users WHERE user_id=$1", user_id)
+        .fetch_one(pool)
+        .await
+        .context("Failed to query database")?
+        .username;
+    Ok(username)
 }
