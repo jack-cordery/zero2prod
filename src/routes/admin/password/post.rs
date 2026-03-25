@@ -90,11 +90,11 @@ pub fn error_redirect(e: PasswordError) -> InternalError<PasswordError> {
 #[derive(thiserror::Error)]
 pub enum PasswordError {
     #[error("An unexpected error occured. Please try again.")]
-    UnexpectedError(anyhow::Error),
+    UnexpectedError(#[from] anyhow::Error),
     #[error("Passwords must match. Please try again.")]
-    PasswordMismatchError(anyhow::Error),
+    PasswordMismatchError(#[source] anyhow::Error),
     #[error("Invalid credentials")]
-    InvalidCredentials(anyhow::Error),
+    InvalidCredentials(#[source] anyhow::Error),
 }
 
 impl std::fmt::Debug for PasswordError {

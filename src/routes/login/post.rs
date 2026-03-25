@@ -43,7 +43,6 @@ pub async fn login(
                 .context("Failed to insert session into valkey")
                 .map_err(|e| {
                     let e = LoginError::UnexpectedError(e);
-                    tracing::error!(error = ?e, "Failed to insert session into valkey");
                     login_redirect(e)
                 })?;
             Ok(HttpResponse::SeeOther()
@@ -55,7 +54,6 @@ pub async fn login(
                 AuthError::InvalidCredentialsError(e) => LoginError::AuthError(e),
                 AuthError::UnexpectedError(e) => LoginError::UnexpectedError(e),
             };
-            tracing::error!(error = ?e, "Login failed");
             Err(login_redirect(e))
         }
     }
@@ -72,9 +70,9 @@ pub fn login_redirect(e: LoginError) -> InternalError<LoginError> {
 #[derive(thiserror::Error)]
 pub enum LoginError {
     #[error("Authentication failed")]
-    AuthError(anyhow::Error),
+    AuthError(#[source] anyhow::Error),
     #[error("Something went wrong")]
-    UnexpectedError(anyhow::Error),
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl std::fmt::Debug for LoginError {
