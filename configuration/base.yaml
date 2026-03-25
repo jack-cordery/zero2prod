@@ -10,3 +10,4 @@ application:
 email_client: 
   authorization_token: "my-secret-token"
   timeout_millis: 10000
+valkey_uri: "redis://127.0.0.1:6379"
