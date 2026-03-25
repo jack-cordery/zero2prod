@@ -10,7 +10,6 @@ pub async fn password_form(flash_messages: IncomingFlashMessages) -> HttpRespons
         writeln!(error_html, "<p><i>{}<p><i>", message.content())
             .expect("Failed to load info string");
     }
-    dbg!(&error_html);
     let body = format!(
         r#"
 <!DOCTYPE HTML>
