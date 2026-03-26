@@ -1,5 +1,5 @@
 use secrecy::SecretString;
-use zero2prod::authentication::{Credentials, validate_credentials};
+use zero2prod::authentication::Credentials;
 
 use crate::helpers::{assert_redirect_to, spawn_app};
 
