@@ -203,6 +203,25 @@ impl TestApp {
             .await
             .expect("Failed to execute post request")
     }
+
+    pub async fn post_logout(&self) -> Response {
+        self.client
+            .post(format!("{}/admin/logout", self.address))
+            .send()
+            .await
+            .expect("Failed to execute logout")
+    }
+
+    pub async fn get_dashboard_html(&self) -> String {
+        self.client
+            .get(format!("{}/admin/dashboard", self.address))
+            .send()
+            .await
+            .expect("Failed to get response")
+            .text()
+            .await
+            .unwrap()
+    }
 }
 
 pub fn assert_redirect_to(response: &Response, location: &str) {

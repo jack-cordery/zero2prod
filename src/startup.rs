@@ -13,7 +13,7 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
     routes::{
-        change_password, dashboard, health_check, home, login, login_form, password_form,
+        change_password, dashboard, health_check, home, login, login_form, logout, password_form,
         publish_newsletter, subscribe, subscriptions_confirm,
     },
 };
@@ -63,7 +63,8 @@ pub fn run(
                     .wrap(from_fn(admin_protection))
                     .route("/dashboard", web::get().to(dashboard))
                     .route("/password", web::get().to(password_form))
-                    .route("/password", web::post().to(change_password)),
+                    .route("/password", web::post().to(change_password))
+                    .route("/logout", web::post().to(logout)),
             )
             .app_data(conn.clone())
             .app_data(email_client.clone())

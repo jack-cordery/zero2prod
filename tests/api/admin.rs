@@ -99,7 +99,7 @@ pub async fn mismatched_new_password_request_redirects_to_change_password_page_w
 }
 
 #[tokio::test]
-pub async fn change_password_request_redirects_to_admin_page_given_valid_confirmation() {
+pub async fn change_password_request_delivers_flash_message_on_success() {
     let test_app = spawn_app().await;
 
     let new_password = "12345";
@@ -112,7 +112,7 @@ pub async fn change_password_request_redirects_to_admin_page_given_valid_confirm
 
     test_app.post_login(&valid_credentials).await;
 
-    let response = test_app
+    let change_password_response = test_app
         .post_change_password(
             &test_app.test_user.password,
             new_password,
@@ -120,14 +120,17 @@ pub async fn change_password_request_redirects_to_admin_page_given_valid_confirm
         )
         .await;
 
-    assert_redirect_to(&response, "/admin/dashboard");
+    assert_redirect_to(&change_password_response, "/admin/dashboard");
+
+    let html = test_app.get_dashboard_html().await;
+
+    assert!(html.contains("Password successfully changed"))
 }
 
 #[tokio::test]
 pub async fn change_password_request_does_so_given_valid_confirmation() {
     let test_app = spawn_app().await;
 
-    let user_id = test_app.test_user.user_id;
     let new_password = "12345";
     let valid_confirmation = "12345";
 
@@ -138,7 +141,7 @@ pub async fn change_password_request_does_so_given_valid_confirmation() {
 
     test_app.post_login(&valid_credentials).await;
 
-    test_app
+    let change_password_response = test_app
         .post_change_password(
             &test_app.test_user.password,
             new_password,
@@ -146,15 +149,18 @@ pub async fn change_password_request_does_so_given_valid_confirmation() {
         )
         .await;
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username,
+    assert_redirect_to(&change_password_response, "/admin/dashboard");
+
+    test_app.post_logout().await;
+
+    let new_credentials = Credentials {
+        username: test_app.test_user.username.clone(),
         password: SecretString::from(new_password),
     };
-    let result = validate_credentials(valid_credentials, &test_app.connection_pool)
-        .await
-        .expect("Failed validation of credentials");
 
-    assert_eq!(user_id, result);
+    let login_response = test_app.post_login(&new_credentials).await;
+
+    assert_redirect_to(&login_response, "/admin/dashboard");
 }
 
 #[tokio::test]
@@ -187,4 +193,45 @@ pub async fn dashboard_accesses_session_data_given_valid_session() {
     let body = test_app.get_admin_dashboard().await.text().await.unwrap();
 
     assert!(body.contains(&test_app.test_user.username));
+}
+
+// logout must have the following properties:
+// - We should also change the way we tested changing password
+//    by actually changing the password then trying to login again with the old and new password
+//    and ensuring the correct things happen
+// - clear session data i.e. remove session token from client
+// - redirect user to home page
+// - we should test by using the client api
+//    i.e. login -> logout -> then try and access a protected route and ensure no access is
+//    provided
+
+#[tokio::test]
+pub async fn logout_stops_user_from_accessing_admin() {
+    let test_app = spawn_app().await;
+
+    let new_password = "12345";
+    let valid_confirmation = "12345";
+
+    let valid_credentials = Credentials {
+        username: test_app.test_user.username.clone(),
+        password: SecretString::from(test_app.test_user.password.clone()),
+    };
+
+    test_app.post_login(&valid_credentials).await;
+
+    test_app
+        .post_change_password(
+            &test_app.test_user.password,
+            new_password,
+            valid_confirmation,
+        )
+        .await;
+
+    let logout_response = test_app.post_logout().await;
+
+    assert_redirect_to(&logout_response, "/");
+
+    let admin_response = test_app.get_admin_dashboard().await;
+
+    assert_redirect_to(&admin_response, "/login");
 }

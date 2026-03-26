@@ -54,6 +54,22 @@ pub async fn dashboard(
                 <body>
                 {}
                 <p>Welcome {username}!</p>
+                    <ol>
+                        <li>
+                            <a href="/admin/password">
+                                <button>
+                                    Change password
+                                </button>
+                            </a>
+                        </li>
+                        <li>
+                            <form action="/admin/logout" method="post">
+                                <button type="submit">
+                                    Logout
+                                </button>
+                            </form>
+                        </li>
+                    </ol>
                 <a href="/admin/password">
                     <button>
                         Change password
