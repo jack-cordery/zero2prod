@@ -125,16 +125,37 @@ impl TestApp {
         }
     }
 
-    pub async fn post_newsletter(&self, body: serde_json::Value) -> Response {
+    pub async fn post_newsletter(&self, title: String, text: String, html: String) -> Response {
+        let mut params = HashMap::new();
+        params.insert("title", title);
+        params.insert("text", text);
+        params.insert("html", html);
         self.client
-            .post(format!("{}/newsletters", &self.address))
+            .post(format!("{}/admin/newsletter", &self.address))
             .basic_auth(&self.test_user.username, Some(&self.test_user.password))
-            .json(&body)
+            .form(&params)
             .send()
             .await
             .expect("should return")
     }
 
+    pub async fn get_newsletter(&self) -> Response {
+        self.client
+            .get(format!("{}/admin/newsletter", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+    }
+    pub async fn get_newsletter_html(&self) -> String {
+        self.client
+            .get(format!("{}/admin/newsletter", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+            .text()
+            .await
+            .unwrap()
+    }
     pub async fn post_login(&self, credentials: &Credentials) -> Response {
         let mut params = HashMap::new();
         params.insert("username", credentials.username.to_owned());

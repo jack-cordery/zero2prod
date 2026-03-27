@@ -13,8 +13,8 @@ use crate::{
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
     routes::{
-        change_password, dashboard, health_check, home, login, login_form, logout, password_form,
-        publish_newsletter, subscribe, subscriptions_confirm,
+        change_password, dashboard, health_check, home, login, login_form, logout, newsletter_form,
+        password_form, publish_newsletter, subscribe, subscriptions_confirm,
     },
 };
 
@@ -55,7 +55,7 @@ pub fn run(
                 "/subscriptions/confirm",
                 web::get().to(subscriptions_confirm),
             )
-            .route("/newsletters", web::post().to(publish_newsletter))
+            .route("/newsletter", web::post().to(publish_newsletter))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
             .service(
@@ -64,7 +64,9 @@ pub fn run(
                     .route("/dashboard", web::get().to(dashboard))
                     .route("/password", web::get().to(password_form))
                     .route("/password", web::post().to(change_password))
-                    .route("/logout", web::post().to(logout)),
+                    .route("/logout", web::post().to(logout))
+                    .route("/newsletter", web::post().to(publish_newsletter))
+                    .route("/newsletter", web::get().to(newsletter_form)),
             )
             .app_data(conn.clone())
             .app_data(email_client.clone())

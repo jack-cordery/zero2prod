@@ -56,6 +56,13 @@ pub async fn dashboard(
                 <p>Welcome {username}!</p>
                     <ol>
                         <li>
+                            <a href="/admin/newsletter">
+                                <button>
+                                    Publish Newsletter
+                                </button>
+                            </a>
+                        </li>
+                        <li>
                             <a href="/admin/password">
                                 <button>
                                     Change password
