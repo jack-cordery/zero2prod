@@ -20,18 +20,24 @@ async fn no_unconfirmed_subscribers_are_sent_newsletter() {
         .await;
 
     // now request a send of a newsletter and the assert is checked on drop
-    let title = "Newsletter!".to_string();
-    let html = "<p> newsletter body as html </p>".to_string();
-    let text = "newsletter body as plain text".to_string();
+    let title = "Newsletter!";
+    let html = "<p> newsletter body as html </p>";
+    let text = "newsletter body as plain text";
 
-    let body = json!( {
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+    });
+
+    let login_body = json!( {
         "username": test_app.test_user.username.clone(),
         "password": test_app.test_user.password.clone(),
     });
 
-    test_app.post_login(&body).await;
+    test_app.post_login(&login_body).await;
 
-    let response = test_app.post_newsletter(title, text, html).await;
+    let response = test_app.post_newsletter(&newsletter_body).await;
 
     assert_redirect_to(&response, "/admin/dashboard");
 }
@@ -67,17 +73,20 @@ async fn invalid_form_redirects_and_returns_flash_message() {
         ("completely empty", "", "", ""),
     ];
 
-    let body = json!( {
+    let login_body = json!( {
         "username": test_app.test_user.username.clone(),
         "password": test_app.test_user.password.clone(),
     });
 
-    test_app.post_login(&body).await;
+    test_app.post_login(&login_body).await;
 
     for (test_name, title, html, text) in test_cases {
-        let response = test_app
-            .post_newsletter(title.to_string(), text.to_string(), html.to_string())
-            .await;
+        let newsletter_body = json!({
+            "title": title,
+            "html": html,
+            "text": text,
+        });
+        let response = test_app.post_newsletter(&newsletter_body).await;
 
         assert_eq!(303, response.status().as_u16());
         assert_eq!(
@@ -113,20 +122,23 @@ async fn unexpected_error_redirects_and_returns_flash_message() {
         .mount(&test_app.email_server)
         .await;
 
-    let body = json!( {
+    let login_body = json!( {
         "username": test_app.test_user.username.clone(),
         "password": test_app.test_user.password.clone(),
     });
 
-    test_app.post_login(&body).await;
+    test_app.post_login(&login_body).await;
 
     let title = "title";
     let text = "text";
     let html = "html";
 
-    let response = test_app
-        .post_newsletter(title.into(), text.into(), html.into())
-        .await;
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+    });
+    let response = test_app.post_newsletter(&newsletter_body).await;
 
     assert_redirect_to(&response, "/admin/newsletter");
 
@@ -149,17 +161,23 @@ async fn newsletter_gets_sent_to_confirmed_subscribers() {
         .mount(&test_app.email_server)
         .await;
 
-    let title = "Newsletter!".to_string();
-    let html = "<p> newsletter body as html </p>".to_string();
-    let text = "newsletter body as plain text".to_string();
+    let title = "Newsletter!";
+    let html = "<p> newsletter body as html </p>";
+    let text = "newsletter body as plain text";
 
-    let body = json!( {
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+    });
+
+    let login_body = json!( {
         "username": test_app.test_user.username.clone(),
         "password": test_app.test_user.password.clone(),
     });
 
-    test_app.post_login(&body).await;
-    let response = test_app.post_newsletter(title, text, html).await;
+    test_app.post_login(&login_body).await;
+    let response = test_app.post_newsletter(&newsletter_body).await;
 
     assert_redirect_to(&response, "/admin/dashboard");
 }
@@ -171,7 +189,13 @@ async fn rejection_of_publish_if_not_logged_in() {
     let title = "Newsletter!".to_string();
     let html = "<p> newsletter body as html </p>".to_string();
     let text = "newsletter body as plain text".to_string();
-    let response = test_app.post_newsletter(title, text, html).await;
+
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+    });
+    let response = test_app.post_newsletter(&newsletter_body).await;
 
     assert_redirect_to(&response, "/login");
 }

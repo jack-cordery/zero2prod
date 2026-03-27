@@ -9,8 +9,9 @@ use fake::{
 };
 use linkify::LinkFinder;
 use reqwest::{Client, Response, redirect};
+use serde::Serialize;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::{collections::HashMap, sync::LazyLock};
+use std::sync::LazyLock;
 use url::Url;
 use uuid::Uuid;
 use wiremock::MockServer;
@@ -123,15 +124,14 @@ impl TestApp {
         }
     }
 
-    pub async fn post_newsletter(&self, title: String, text: String, html: String) -> Response {
-        let mut params = HashMap::new();
-        params.insert("title", title);
-        params.insert("text", text);
-        params.insert("html", html);
+    pub async fn post_newsletter<Body>(&self, body: &Body) -> Response
+    where
+        Body: Serialize,
+    {
         self.client
             .post(format!("{}/admin/newsletter", &self.address))
             .basic_auth(&self.test_user.username, Some(&self.test_user.password))
-            .form(&params)
+            .form(body)
             .send()
             .await
             .expect("should return")
@@ -203,20 +203,13 @@ impl TestApp {
             .unwrap()
     }
 
-    pub async fn post_change_password(
-        &self,
-        current_password: &str,
-        new_password: &str,
-        confirmation: &str,
-    ) -> Response {
-        let mut params = HashMap::new();
-        params.insert("current_password", current_password);
-        params.insert("new_password", new_password);
-        params.insert("confirmation", confirmation);
-
+    pub async fn post_change_password<Body>(&self, body: &Body) -> Response
+    where
+        Body: Serialize,
+    {
         self.client
             .post(format!("{}/admin/password", self.address))
-            .form(&params)
+            .form(body)
             .send()
             .await
             .expect("Failed to execute post request")
