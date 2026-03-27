@@ -1,6 +1,5 @@
 use reqwest::header::SET_COOKIE;
-use secrecy::SecretString;
-use zero2prod::authentication::Credentials;
+use serde_json::json;
 
 use crate::helpers::{assert_redirect_to, spawn_app};
 
@@ -10,11 +9,12 @@ pub async fn a_flash_error_message_is_returned_on_failure() {
     let test_app = spawn_app().await;
 
     // Act
-    let invalid_credentials = Credentials {
-        username: "random-username".into(),
-        password: SecretString::new("random-password".into()),
-    };
-    let response = test_app.post_login(&invalid_credentials).await;
+
+    let body = json!({
+        "username": "random-username",
+        "password": "random-password",
+    });
+    let response = test_app.post_login(&body).await;
 
     // Assert
     assert_redirect_to(&response, "/login");
@@ -32,12 +32,12 @@ pub async fn a_flash_error_message_is_returned_on_failure() {
 pub async fn login_redirects_to_admin_dashboard_on_success() {
     let test_app = spawn_app().await;
 
-    let test_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    let response = test_app.post_login(&test_credentials).await;
+    let response = test_app.post_login(&body).await;
 
     let session_cookie_cookies: Vec<&str> = response
         .headers()

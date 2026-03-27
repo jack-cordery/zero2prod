@@ -1,9 +1,8 @@
-use secrecy::SecretString;
+use serde_json::json;
 use wiremock::{
     Mock, ResponseTemplate,
     matchers::{method, path},
 };
-use zero2prod::authentication::Credentials;
 
 use crate::helpers::{ConfirmationLinks, TestApp, assert_redirect_to, spawn_app};
 
@@ -25,12 +24,12 @@ async fn no_unconfirmed_subscribers_are_sent_newsletter() {
     let html = "<p> newsletter body as html </p>".to_string();
     let text = "newsletter body as plain text".to_string();
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let response = test_app.post_newsletter(title, text, html).await;
 
@@ -68,12 +67,12 @@ async fn invalid_form_redirects_and_returns_flash_message() {
         ("completely empty", "", "", ""),
     ];
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     for (test_name, title, html, text) in test_cases {
         let response = test_app
@@ -114,12 +113,12 @@ async fn unexpected_error_redirects_and_returns_flash_message() {
         .mount(&test_app.email_server)
         .await;
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let title = "title";
     let text = "text";
@@ -154,12 +153,12 @@ async fn newsletter_gets_sent_to_confirmed_subscribers() {
     let html = "<p> newsletter body as html </p>".to_string();
     let text = "newsletter body as plain text".to_string();
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
     let response = test_app.post_newsletter(title, text, html).await;
 
     assert_redirect_to(&response, "/admin/dashboard");

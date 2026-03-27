@@ -1,5 +1,4 @@
-use secrecy::SecretString;
-use zero2prod::authentication::Credentials;
+use serde_json::json;
 
 use crate::helpers::{assert_redirect_to, spawn_app};
 
@@ -48,12 +47,12 @@ pub async fn incorrect_current_password_request_redirects_to_change_password_pag
     let new_password = "12345";
     let invalid_confirmation = "12345";
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let response = test_app
         .post_change_password(
@@ -77,12 +76,12 @@ pub async fn mismatched_new_password_request_redirects_to_change_password_page_w
     let new_password = "12345";
     let invalid_confirmation = "1234";
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let response = test_app
         .post_change_password(
@@ -105,12 +104,12 @@ pub async fn change_password_request_delivers_flash_message_on_success() {
     let new_password = "12345";
     let valid_confirmation = "12345";
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let change_password_response = test_app
         .post_change_password(
@@ -134,12 +133,12 @@ pub async fn change_password_request_does_so_given_valid_confirmation() {
     let new_password = "12345";
     let valid_confirmation = "12345";
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let change_password_response = test_app
         .post_change_password(
@@ -153,12 +152,12 @@ pub async fn change_password_request_does_so_given_valid_confirmation() {
 
     test_app.post_logout().await;
 
-    let new_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(new_password),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": new_password,
+    });
 
-    let login_response = test_app.post_login(&new_credentials).await;
+    let login_response = test_app.post_login(&body).await;
 
     assert_redirect_to(&login_response, "/admin/dashboard");
 }
@@ -167,12 +166,12 @@ pub async fn change_password_request_does_so_given_valid_confirmation() {
 pub async fn dashboard_returns_success_given_valid_session() {
     let test_app = spawn_app().await;
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json! ({
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let response = test_app.get_admin_dashboard().await;
 
@@ -183,12 +182,12 @@ pub async fn dashboard_returns_success_given_valid_session() {
 pub async fn dashboard_accesses_session_data_given_valid_session() {
     let test_app = spawn_app().await;
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     let body = test_app.get_admin_dashboard().await.text().await.unwrap();
 
@@ -212,12 +211,12 @@ pub async fn logout_stops_user_from_accessing_admin() {
     let new_password = "12345";
     let valid_confirmation = "12345";
 
-    let valid_credentials = Credentials {
-        username: test_app.test_user.username.clone(),
-        password: SecretString::from(test_app.test_user.password.clone()),
-    };
+    let body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
 
-    test_app.post_login(&valid_credentials).await;
+    test_app.post_login(&body).await;
 
     test_app
         .post_change_password(

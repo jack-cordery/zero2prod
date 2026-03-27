@@ -9,14 +9,12 @@ use fake::{
 };
 use linkify::LinkFinder;
 use reqwest::{Client, Response, redirect};
-use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::{collections::HashMap, sync::LazyLock};
 use url::Url;
 use uuid::Uuid;
 use wiremock::MockServer;
 use zero2prod::{
-    authentication::Credentials,
     configuration::{DatabaseSettings, get_configuration},
     startup::{Application, get_connection_pool},
     telementry::{get_subscriber, init_subscriber},
@@ -156,14 +154,13 @@ impl TestApp {
             .await
             .unwrap()
     }
-    pub async fn post_login(&self, credentials: &Credentials) -> Response {
-        let mut params = HashMap::new();
-        params.insert("username", credentials.username.to_owned());
-        params.insert("password", credentials.password.expose_secret().into());
-
+    pub async fn post_login<Body>(&self, body: &Body) -> Response
+    where
+        Body: serde::Serialize,
+    {
         self.client
             .post(format!("{}/login", &self.address))
-            .form(&params)
+            .form(body)
             .send()
             .await
             .expect("should return")
