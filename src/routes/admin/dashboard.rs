@@ -1,10 +1,6 @@
-use std::fmt::Debug;
-use std::fmt::Display;
-
 use std::fmt::Write;
 
 use actix_web::HttpResponse;
-use actix_web::error::ErrorInternalServerError;
 use actix_web_flash_messages::IncomingFlashMessages;
 use actix_web_flash_messages::Level;
 use anyhow::Context;
@@ -13,13 +9,7 @@ use tracing::instrument;
 
 use crate::authentication::get_user;
 use crate::session_state::TypedSession;
-
-fn e500<T>(error: T) -> actix_web::Error
-where
-    T: Debug + Display + 'static,
-{
-    ErrorInternalServerError(error)
-}
+use crate::utils::e500;
 
 #[instrument(
     name = "Handling GET admin/dashboard",

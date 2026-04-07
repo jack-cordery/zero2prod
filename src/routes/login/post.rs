@@ -10,6 +10,7 @@ use crate::{
     authentication::{AuthError, Credentials, validate_credentials},
     routes::error_chain_fmt,
     session_state::TypedSession,
+    utils::see_other,
 };
 
 #[derive(Deserialize)]
@@ -45,9 +46,7 @@ pub async fn login(
                     let e = LoginError::UnexpectedError(e);
                     login_redirect(e)
                 })?;
-            Ok(HttpResponse::SeeOther()
-                .insert_header((actix_web::http::header::LOCATION, "/admin/dashboard"))
-                .finish())
+            Ok(see_other("/admin/dashboard"))
         }
         Err(e) => {
             let e = match e {
@@ -61,9 +60,7 @@ pub async fn login(
 
 pub fn login_redirect(e: LoginError) -> InternalError<LoginError> {
     FlashMessage::error(e.to_string()).send();
-    let response = HttpResponse::SeeOther()
-        .insert_header((actix_web::http::header::LOCATION, "/login"))
-        .finish();
+    let response = see_other("/login");
     InternalError::from_response(e, response)
 }
 

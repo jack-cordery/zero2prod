@@ -130,7 +130,6 @@ impl TestApp {
     {
         self.client
             .post(format!("{}/admin/newsletter", &self.address))
-            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .form(body)
             .send()
             .await

@@ -11,10 +11,13 @@ use anyhow::anyhow;
 use sqlx::PgPool;
 use tracing::instrument;
 
-use crate::authentication::{
-    AuthError, Credentials, UserId, get_user, update_password, validate_credentials,
-};
 use crate::routes::error_chain_fmt;
+use crate::{
+    authentication::{
+        AuthError, Credentials, UserId, get_user, update_password, validate_credentials,
+    },
+    utils::see_other,
+};
 
 #[derive(Deserialize)]
 pub struct NewPasswordForm {
@@ -72,17 +75,13 @@ pub async fn change_password(
         })?;
 
     FlashMessage::info("Password successfully changed").send();
-    let response = HttpResponse::SeeOther()
-        .insert_header((actix_web::http::header::LOCATION, "/admin/dashboard"))
-        .finish();
+    let response = see_other("/admin/dashboard");
     Ok(response)
 }
 
 pub fn error_redirect(e: PasswordError) -> InternalError<PasswordError> {
     FlashMessage::error(e.to_string()).send();
-    let response = HttpResponse::SeeOther()
-        .insert_header((actix_web::http::header::LOCATION, "/admin/password"))
-        .finish();
+    let response = see_other("/admin/password");
 
     InternalError::from_response(e, response)
 }

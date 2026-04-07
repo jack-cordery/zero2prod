@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde_json::json;
 use wiremock::{
     Mock, ResponseTemplate,
@@ -28,6 +30,7 @@ async fn no_unconfirmed_subscribers_are_sent_newsletter() {
         "title": title,
         "html": html,
         "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
 
     let login_body = json!( {
@@ -85,6 +88,7 @@ async fn invalid_form_redirects_and_returns_flash_message() {
             "title": title,
             "html": html,
             "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
         });
         let response = test_app.post_newsletter(&newsletter_body).await;
 
@@ -137,14 +141,13 @@ async fn unexpected_error_redirects_and_returns_flash_message() {
         "title": title,
         "html": html,
         "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
     let response = test_app.post_newsletter(&newsletter_body).await;
 
     assert_redirect_to(&response, "/admin/newsletter");
 
     let newsletter_html = test_app.get_newsletter_html().await;
-
-    dbg!(&newsletter_html);
 
     assert!(newsletter_html.contains("An unexpected error occurred. Please try again."));
 }
@@ -169,6 +172,7 @@ async fn newsletter_gets_sent_to_confirmed_subscribers() {
         "title": title,
         "html": html,
         "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
 
     let login_body = json!( {
@@ -194,12 +198,123 @@ async fn rejection_of_publish_if_not_logged_in() {
         "title": title,
         "html": html,
         "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
     let response = test_app.post_newsletter(&newsletter_body).await;
 
     assert_redirect_to(&response, "/login");
 }
 
+#[tokio::test]
+async fn newsletter_creation_is_idempotent() {
+    let test_app = spawn_app().await;
+
+    create_confirmed_subscriber(&test_app).await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&test_app.email_server)
+        .await;
+
+    let title = "Newsletter!";
+    let html = "<p> newsletter body as html </p>";
+    let text = "newsletter body as plain text";
+
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
+
+    let login_body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
+
+    test_app.post_login(&login_body).await;
+
+    // send once
+    let response = test_app.post_newsletter(&newsletter_body).await;
+    assert_redirect_to(&response, "/admin/dashboard");
+
+    let publish_html = test_app.get_newsletter_html().await;
+    assert!(publish_html.contains("Newsletter published"));
+
+    // resend
+    let response = test_app.post_newsletter(&newsletter_body).await;
+    assert_redirect_to(&response, "/admin/dashboard");
+
+    let publish_hmtl = test_app.get_newsletter_html().await;
+    assert!(publish_hmtl.contains("Newsletter published"));
+
+    // assert that only one email is sent - envoked on drop
+}
+
+#[tokio::test]
+async fn newsletter_creation_is_idempotent_under_concurrent_requests() {
+    let test_app = spawn_app().await;
+
+    create_confirmed_subscriber(&test_app).await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
+        .expect(1)
+        .mount(&test_app.email_server)
+        .await;
+
+    let title = "Newsletter!";
+    let html = "<p> newsletter body as html </p>";
+    let text = "newsletter body as plain text";
+
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
+
+    let login_body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
+
+    test_app.post_login(&login_body).await;
+
+    let initial_request = test_app.post_newsletter(&newsletter_body);
+    let retry_request = test_app.post_newsletter(&newsletter_body);
+
+    let (initial_response, retry_response) = tokio::join!(initial_request, retry_request);
+
+    assert_eq!(
+        initial_response
+            .headers()
+            .get("location")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        retry_response
+            .headers()
+            .get("location")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+    );
+
+    assert_eq!(
+        initial_response.status().as_u16(),
+        retry_response.status().as_u16()
+    );
+    assert_eq!(
+        initial_response.text().await.unwrap(),
+        retry_response.text().await.unwrap()
+    );
+
+    // assert that only one email is sent - envoked on drop
+}
 async fn create_unconfirmed_subscriber(test_app: &TestApp) -> ConfirmationLinks {
     let _mock_guard = Mock::given(method("POST"))
         .and(path("/email"))

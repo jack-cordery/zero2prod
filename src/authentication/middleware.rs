@@ -6,16 +6,15 @@ use std::{
 use uuid::Uuid;
 
 use actix_web::{
-    HttpMessage, HttpResponse,
+    HttpMessage,
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     error::{ErrorInternalServerError, InternalError},
-    http::header::LOCATION,
     middleware::Next,
 };
 use tracing::instrument;
 
-use crate::session_state::TypedSession;
+use crate::{session_state::TypedSession, utils::see_other};
 
 #[derive(Debug, Clone)]
 pub struct UserId(Uuid);
@@ -39,13 +38,10 @@ pub async fn admin_protection(
         request.extensions_mut().insert(UserId(user_id));
         return next.call(req).await;
     } else {
-        Err(InternalError::from_response(
-            anyhow!("User is not logged in"),
-            HttpResponse::SeeOther()
-                .insert_header((LOCATION, "/login"))
-                .finish(),
+        Err(
+            InternalError::from_response(anyhow!("User is not logged in"), see_other("/login"))
+                .into(),
         )
-        .into())
     }
 }
 

@@ -2,6 +2,7 @@ use actix_web::{HttpResponse, web::ReqData};
 use actix_web_flash_messages::IncomingFlashMessages;
 use std::fmt::Write;
 use tracing::instrument;
+use uuid::Uuid;
 
 use crate::authentication::UserId;
 
@@ -10,6 +11,7 @@ pub async fn newsletter_form(
     flash_messages: IncomingFlashMessages,
     user_id: ReqData<UserId>,
 ) -> HttpResponse {
+    let indempotency_key = Uuid::new_v4().to_string();
     let mut message_html = String::new();
     for message in flash_messages.iter() {
         writeln!(message_html, "<p><i>{}</p></i>", message.content())
@@ -26,6 +28,8 @@ pub async fn newsletter_form(
     <p>Please fill in the below to publish a newsletter to <b>ALL</b> subscribers.</p> 
     {message_html}
     <form action="/admin/newsletter" method="post">
+    <input type="hidden" id="idempotency_key" name="idempotency_key" value="{indempotency_key}">
+    </input>
     <ul>
         <li>
             <label>
