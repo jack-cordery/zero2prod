@@ -1,5 +1,10 @@
 use std::time::Duration;
 
+use fake::{
+    Fake, Faker,
+    faker::{internet::raw::SafeEmail, name::raw::Name},
+    locales::EN,
+};
 use serde_json::json;
 use wiremock::{
     Mock, ResponseTemplate,
@@ -315,6 +320,90 @@ async fn newsletter_creation_is_idempotent_under_concurrent_requests() {
 
     // assert that only one email is sent - envoked on drop
 }
+
+#[tokio::test]
+async fn transient_errors_dont_cause_duplicate_emails_on_retry() {
+    let test_app = spawn_app().await;
+
+    create_confirmed_subscriber(&test_app).await;
+    create_confirmed_subscriber(&test_app).await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .up_to_n_times(1)
+        .expect(1)
+        .named("first email succesfully sent")
+        .mount(&test_app.email_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(500))
+        .up_to_n_times(1)
+        .expect(1)
+        .named("transient error on second email")
+        .mount(&test_app.email_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .named("retry should only receive one request")
+        .mount(&test_app.email_server)
+        .await;
+
+    let title = "Newsletter!";
+    let html = "<p> newsletter body as html </p>";
+    let text = "newsletter body as plain text";
+
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
+
+    let login_body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
+
+    test_app.post_login(&login_body).await;
+
+    let initial_request = test_app.post_newsletter(&newsletter_body);
+    let retry_request = test_app.post_newsletter(&newsletter_body);
+
+    let (initial_response, retry_response) = tokio::join!(initial_request, retry_request);
+    //
+    // assert_eq!(
+    //     initial_response
+    //         .headers()
+    //         .get("location")
+    //         .unwrap()
+    //         .to_str()
+    //         .unwrap(),
+    //     retry_response
+    //         .headers()
+    //         .get("location")
+    //         .unwrap()
+    //         .to_str()
+    //         .unwrap(),
+    // );
+    //
+    // assert_eq!(
+    //     initial_response.status().as_u16(),
+    //     retry_response.status().as_u16()
+    // );
+    // assert_eq!(
+    //     initial_response.text().await.unwrap(),
+    //     retry_response.text().await.unwrap()
+    // );
+    //
+    // assert that only one email is sent - envoked on drop
+}
+
 async fn create_unconfirmed_subscriber(test_app: &TestApp) -> ConfirmationLinks {
     let _mock_guard = Mock::given(method("POST"))
         .and(path("/email"))
@@ -324,8 +413,14 @@ async fn create_unconfirmed_subscriber(test_app: &TestApp) -> ConfirmationLinks 
         .mount_as_scoped(&test_app.email_server)
         .await;
 
+    let name: String = Name(EN).fake();
+    let email: String = SafeEmail(EN).fake();
+
+    let url_name = urlencoding::encode(&name);
+    let url_email = urlencoding::encode(&email);
+
     test_app
-        .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
+        .post_subsription(format!("name={url_name}&email={url_email}"))
         .await
         .error_for_status()
         .unwrap();
