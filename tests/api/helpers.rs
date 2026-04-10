@@ -11,12 +11,15 @@ use linkify::LinkFinder;
 use reqwest::{Client, Response, redirect};
 use serde::Serialize;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::sync::LazyLock;
+use std::{sync::LazyLock, time::Duration};
+use tokio::time::sleep;
 use url::Url;
 use uuid::Uuid;
 use wiremock::MockServer;
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
+    email_client::EmailClient,
+    issue_delivery_worker::{QueueState, process_email},
     startup::{Application, get_connection_pool},
     telementry::{get_subscriber, init_subscriber},
 };
@@ -77,6 +80,7 @@ pub struct TestApp {
     pub port: u16,
     pub test_user: TestUser,
     pub client: reqwest::Client,
+    pub email_client: EmailClient,
 }
 
 impl TestApp {
@@ -232,6 +236,18 @@ impl TestApp {
             .await
             .unwrap()
     }
+
+    pub async fn dispatch_all_emails(&self) {
+        loop {
+            match process_email(&self.connection_pool, &self.email_client).await {
+                Ok(QueueState::Empty) => {
+                    break;
+                }
+                Ok(QueueState::NonEmpty(_)) => (),
+                Err(_) => sleep(Duration::from_secs(1)).await,
+            }
+        }
+    }
 }
 
 pub fn assert_redirect_to(response: &Response, location: &str) {
@@ -274,6 +290,18 @@ pub async fn spawn_app() -> TestApp {
         .build()
         .expect("should build");
 
+    let base_url = Url::parse(&configuration.email_client.base_url).expect("Invalid base url");
+
+    let email_client = EmailClient::new(
+        base_url,
+        configuration
+            .email_client
+            .sender()
+            .expect("invalid sender email"),
+        configuration.email_client.authorization_token.clone(),
+        configuration.email_client.timeout(),
+    );
+
     tokio::spawn(application.run_until_stopped());
 
     let test_app = TestApp {
@@ -283,6 +311,7 @@ pub async fn spawn_app() -> TestApp {
         port,
         test_user: TestUser::generate(),
         client,
+        email_client,
     };
     test_app.insert_test_user().await;
     test_app

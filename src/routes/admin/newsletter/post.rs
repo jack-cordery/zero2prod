@@ -64,7 +64,7 @@ impl ResponseError for PublishError {
 // - [X] Create a table to persist newsletter issue (user_id, newsletter_id, title, text, html)
 // - [X] Create a Queue table this will store our tasks for a worker to complete. (sub_id,
 // idempotent_key/newsletter_issue?)
-// - [] Change publish newsletter end point to just requesting it to be published.
+// - [X] Change publish newsletter end point to just requesting it to be published.
 //   - It will respond Ok to user on successful request
 //   - It will enque all subs into the queue table
 //   - It will return saved response if there is one, and will deal with concurrency as is.
@@ -150,6 +150,7 @@ pub async fn publish_newsletter(
 
     match initialise_response(&user_id, &idempotency_key, &mut tx).await? {
         NextAction::RetrieveResponse => {
+            FlashMessage::info("Newsletter published").send();
             let response = get_saved_response(&user_id, &idempotency_key, &mut tx)
                 .await?
                 .context("expected a fully formed saved response")?;
@@ -160,22 +161,21 @@ pub async fn publish_newsletter(
                 persist_newsletter_issue(&user_id, title, text, html, &mut tx).await?;
             match enqueue_emails(newsletter_id, &mut tx).await {
                 Ok(_) => {
-                    //
+                    FlashMessage::info("Newsletter published").send();
+                    let response = see_other("/admin/dashboard");
+                    let response =
+                        save_response(&user_id, &idempotency_key, response, &mut tx).await?;
                     tx.commit().await.context(
                         "Failed to commit transaction to complete publishing newsletter",
                     )?;
-                    FlashMessage::info("Newsletter published").send();
-                    let response = see_other("/admin/dashboard");
                     Ok(response)
                 }
                 Err(e) => {
                     FlashMessage::info(e.to_string()).send();
                     let response = see_other("/admin/newsletter");
-                    let response =
-                        save_response(&user_id, &idempotency_key, response, &mut tx).await?;
                     Ok(response)
                 }
-            } // enqueue emails and all that jazz
+            }
         }
     }
 }
