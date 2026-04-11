@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use fake::{
-    Fake, Faker,
+    Fake, 
     faker::{internet::raw::SafeEmail, name::raw::Name},
     locales::EN,
 };
