@@ -1,23 +1,18 @@
 use std::time::Duration;
 
-use fake::{
-    Fake, 
-    faker::{internet::raw::SafeEmail, name::raw::Name},
-    locales::EN,
-};
 use serde_json::json;
 use wiremock::{
     Mock, ResponseTemplate,
     matchers::{method, path},
 };
 
-use crate::helpers::{ConfirmationLinks, TestApp, assert_redirect_to, spawn_app};
+use crate::helpers::{assert_redirect_to, spawn_app};
 
 #[tokio::test]
 async fn no_unconfirmed_subscribers_are_sent_newsletter() {
     let test_app = spawn_app().await;
 
-    create_unconfirmed_subscriber(&test_app).await;
+    test_app.create_unconfirmed_subscriber().await;
 
     Mock::given(method("POST"))
         .and(path("/email"))
@@ -63,7 +58,7 @@ async fn user_must_be_logged_in_to_see_newsletter_page() {
 async fn invalid_form_redirects_and_returns_flash_message() {
     let test_app = spawn_app().await;
 
-    create_confirmed_subscriber(&test_app).await;
+    test_app.create_confirmed_subscriber().await;
 
     Mock::given(method("POST"))
         .and(path("/email"))
@@ -122,7 +117,7 @@ async fn invalid_form_redirects_and_returns_flash_message() {
 async fn newsletter_gets_sent_to_confirmed_subscribers() {
     let test_app = spawn_app().await;
 
-    create_confirmed_subscriber(&test_app).await;
+    test_app.create_confirmed_subscriber().await;
 
     Mock::given(method("POST"))
         .and(path("/email"))
@@ -178,7 +173,7 @@ async fn rejection_of_publish_if_not_logged_in() {
 async fn newsletter_creation_is_idempotent() {
     let test_app = spawn_app().await;
 
-    create_confirmed_subscriber(&test_app).await;
+    test_app.create_confirmed_subscriber().await;
 
     Mock::given(method("POST"))
         .and(path("/email"))
@@ -233,7 +228,7 @@ async fn newsletter_creation_is_idempotent() {
 async fn newsletter_creation_is_idempotent_under_concurrent_requests() {
     let test_app = spawn_app().await;
 
-    create_confirmed_subscriber(&test_app).await;
+    test_app.create_confirmed_subscriber().await;
 
     Mock::given(method("POST"))
         .and(path("/email"))
@@ -297,8 +292,8 @@ async fn newsletter_creation_is_idempotent_under_concurrent_requests() {
 async fn transient_errors_dont_cause_duplicate_emails_on_retry() {
     let test_app = spawn_app().await;
 
-    create_confirmed_subscriber(&test_app).await;
-    create_confirmed_subscriber(&test_app).await;
+    test_app.create_confirmed_subscriber().await;
+    test_app.create_confirmed_subscriber().await;
 
     Mock::given(method("POST"))
         .and(path("/email"))
@@ -375,44 +370,4 @@ async fn transient_errors_dont_cause_duplicate_emails_on_retry() {
 
     // assert that only one email is sent - envoked on drop
     test_app.dispatch_all_emails().await;
-}
-
-async fn create_unconfirmed_subscriber(test_app: &TestApp) -> ConfirmationLinks {
-    let _mock_guard = Mock::given(method("POST"))
-        .and(path("/email"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(1)
-        .named("Create unconfirmed subscriber")
-        .mount_as_scoped(&test_app.email_server)
-        .await;
-
-    let name: String = Name(EN).fake();
-    let email: String = SafeEmail(EN).fake();
-
-    let url_name = urlencoding::encode(&name);
-    let url_email = urlencoding::encode(&email);
-
-    test_app
-        .post_subsription(format!("name={url_name}&email={url_email}"))
-        .await
-        .error_for_status()
-        .unwrap();
-
-    let recieved_request = &test_app
-        .email_server
-        .received_requests()
-        .await
-        .unwrap()
-        .pop()
-        .unwrap();
-    test_app.get_confirmation_links(recieved_request)
-}
-
-async fn create_confirmed_subscriber(test_app: &TestApp) {
-    let confirmation_links = create_unconfirmed_subscriber(test_app).await;
-    reqwest::get(confirmation_links.html)
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
 }

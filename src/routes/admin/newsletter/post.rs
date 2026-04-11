@@ -57,25 +57,6 @@ impl ResponseError for PublishError {
     }
 }
 
-// TODO: So we have the problem at the moment that retry causes partial states
-// i.e. we can have that n/N_subscribers emails be sent out where 0 < n < N_subscribers
-// and we need a way to recover. We can backtrack i.e. send out an apology or delete an email
-// and so we will use forward recovery. To do so we will need to jiggle thing around a bit.
-// - [X] Create a table to persist newsletter issue (user_id, newsletter_id, title, text, html)
-// - [X] Create a Queue table this will store our tasks for a worker to complete. (sub_id,
-// idempotent_key/newsletter_issue?)
-// - [X] Change publish newsletter end point to just requesting it to be published.
-//   - It will respond Ok to user on successful request
-//   - It will enque all subs into the queue table
-//   - It will return saved response if there is one, and will deal with concurrency as is.
-// - [] Create a background worker using spawn + select in startup.rs
-//   - It will constantly pick with SELECT FOR UPDATE SKIP LOCKED the first available in the queue
-//     and try to send the email to the user. For transient errors it will not delete the row and
-//     skip it. For non-transient errors it will delete it. On successful email it will delete the
-//     task
-// - [] Create a background task to clean up expired idempotent keys and associated tasks
-//
-
 #[tracing::instrument(name = "Enqueue emails", skip(tx))]
 pub async fn enqueue_emails(
     newsletter_id: Uuid,

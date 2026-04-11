@@ -53,6 +53,13 @@ pub async fn dashboard(
                             </a>
                         </li>
                         <li>
+                            <a href="/admin/issues">
+                                <button>
+                                    See Newsletter Issues
+                                </button>
+                            </a>
+                        </li>
+                        <li>
                             <a href="/admin/password">
                                 <button>
                                     Change password

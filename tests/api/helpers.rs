@@ -4,7 +4,10 @@ use argon2::{
 };
 use fake::{
     Fake,
-    faker::{internet::ar_sa::Password, name::raw::NameWithTitle},
+    faker::{
+        internet::{ar_sa::Password, raw::SafeEmail},
+        name::raw::{Name, NameWithTitle},
+    },
     locales::EN,
 };
 use linkify::LinkFinder;
@@ -15,7 +18,10 @@ use std::{sync::LazyLock, time::Duration};
 use tokio::time::sleep;
 use url::Url;
 use uuid::Uuid;
-use wiremock::MockServer;
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
+};
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
     email_client::EmailClient,
@@ -237,6 +243,17 @@ impl TestApp {
             .unwrap()
     }
 
+    pub async fn get_issues_html(&self) -> String {
+        self.client
+            .get(format!("{}/admin/issues", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+            .text()
+            .await
+            .unwrap()
+    }
+
     pub async fn dispatch_all_emails(&self) {
         loop {
             match process_email(&self.connection_pool, &self.email_client).await {
@@ -247,6 +264,44 @@ impl TestApp {
                 Err(_) => sleep(Duration::from_secs(1)).await,
             }
         }
+    }
+    pub async fn create_unconfirmed_subscriber(&self) -> ConfirmationLinks {
+        let _mock_guard = Mock::given(method("POST"))
+            .and(path("/email"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .named("Create unconfirmed subscriber")
+            .mount_as_scoped(&self.email_server)
+            .await;
+
+        let name: String = Name(EN).fake();
+        let email: String = SafeEmail(EN).fake();
+
+        let url_name = urlencoding::encode(&name);
+        let url_email = urlencoding::encode(&email);
+
+        self.post_subsription(format!("name={url_name}&email={url_email}"))
+            .await
+            .error_for_status()
+            .unwrap();
+
+        let recieved_request = self
+            .email_server
+            .received_requests()
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        self.get_confirmation_links(&recieved_request)
+    }
+
+    pub async fn create_confirmed_subscriber(&self) {
+        let confirmation_links = self.create_unconfirmed_subscriber().await;
+        reqwest::get(confirmation_links.html)
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
     }
 }
 
