@@ -372,58 +372,53 @@ async fn transient_errors_dont_cause_duplicate_emails_on_retry() {
     test_app.dispatch_all_emails().await;
 }
 
-// ok so we also just want to check that when we publish
-// we get n attempts to send the newsletter
-// we should be able to mock this with 4 500 responses and a final
-// 200 response
-//
-// #[tokio::test]
-// async fn publish_newsletter_will_make_no_more_than_n_attempts_to_send_email() {
-//     let test_app = spawn_app().await;
-//
-//     test_app.create_confirmed_subscriber().await;
-//
-//     Mock::given(method("POST"))
-//         .and(path("/email"))
-//         .respond_with(ResponseTemplate::new(500))
-//         .up_to_n_times(5)
-//         .expect(5)
-//         .named("5 failed attempts")
-//         .mount(&test_app.email_server)
-//         .await;
-//
-//     Mock::given(method("POST"))
-//         .and(path("/email"))
-//         .respond_with(ResponseTemplate::new(200))
-//         .expect(0)
-//         .named("expect no more as number of retries used up")
-//         .mount(&test_app.email_server)
-//         .await;
-//
-//     let title = "Newsletter!";
-//     let html = "<p> newsletter body as html </p>";
-//     let text = "newsletter body as plain text";
-//
-//     let newsletter_body = json!({
-//         "title": title,
-//         "html": html,
-//         "text": text,
-//         "idempotency_key": uuid::Uuid::new_v4().to_string(),
-//     });
-//
-//     let login_body = json!( {
-//         "username": test_app.test_user.username.clone(),
-//         "password": test_app.test_user.password.clone(),
-//     });
-//
-//     test_app.post_login(&login_body).await;
-//
-//     test_app.post_newsletter(&newsletter_body).await;
-//
-//     // assert that only one email is sent - envoked on drop
-//     test_app.dispatch_all_emails().await;
-// }
-//
+#[tokio::test]
+async fn publish_newsletter_will_make_no_more_than_n_attempts_to_send_email() {
+    let test_app = spawn_app().await;
+
+    test_app.create_confirmed_subscriber().await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(500))
+        .up_to_n_times(5)
+        .expect(5)
+        .named("5 failed attempts")
+        .mount(&test_app.email_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .named("expect no more as number of retries used up")
+        .mount(&test_app.email_server)
+        .await;
+
+    let title = "Newsletter!";
+    let html = "<p> newsletter body as html </p>";
+    let text = "newsletter body as plain text";
+
+    let newsletter_body = json!({
+        "title": title,
+        "html": html,
+        "text": text,
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
+
+    let login_body = json!( {
+        "username": test_app.test_user.username.clone(),
+        "password": test_app.test_user.password.clone(),
+    });
+
+    test_app.post_login(&login_body).await;
+
+    test_app.post_newsletter(&newsletter_body).await;
+
+    // assert that only one email is sent - envoked on drop
+    test_app.dispatch_all_emails().await;
+}
+
 #[tokio::test]
 async fn publish_newsletter_will_make_n_attempts_to_send_email() {
     let test_app = spawn_app().await;
