@@ -263,8 +263,6 @@ impl TestApp {
                     break;
                 }
                 Ok(QueueState::Waiting(wait_time)) => {
-                    dbg!(&wait_time);
-
                     sleep(Duration::from_secs_f64(wait_time)).await
                 }
                 Ok(QueueState::Ready(_)) => (),
