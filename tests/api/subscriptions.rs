@@ -45,10 +45,6 @@ async fn subscribe_returns_200_for_valid_form_data() {
 
 #[tokio::test]
 async fn subscribe_fails_if_there_is_a_fatal_database_error_from_subscription_tokens() {
-    // we will enforce the database returning a falter error
-    // by first deleting a critical column from the db and the calling Post subscriber
-    // then asserting that it returns status 500
-
     let test_app = spawn_app().await;
 
     sqlx::query!("ALTER TABLE subscription_tokens DROP COLUMN subscription_token")
@@ -65,10 +61,6 @@ async fn subscribe_fails_if_there_is_a_fatal_database_error_from_subscription_to
 
 #[tokio::test]
 async fn subscribe_fails_if_there_is_a_fatal_database_error_from_subscriptions() {
-    // we will enforce the database returning a falter error
-    // by first deleting a critical column from the db and the calling Post subscriber
-    // then asserting that it returns status 500
-
     let test_app = spawn_app().await;
 
     sqlx::query!("ALTER TABLE subscriptions DROP COLUMN email")
@@ -159,9 +151,6 @@ async fn subscribe_sends_confirmation_email_given_correct_inputs() {
 
 #[tokio::test]
 async fn subscribe_sends_confirmation_email_with_a_link() {
-    // so this needs to setup test app attach a mock response
-    // then use recieved_requests to check the body contains the session token
-    // before we do that we need to deserialize it
     let test_app = spawn_app().await;
 
     Mock::given(method("POST"))

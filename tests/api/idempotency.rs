@@ -7,25 +7,8 @@ use wiremock::{
 
 use crate::helpers::spawn_app;
 
-// we want to test to ensure that the worker will actually
-// clean up keys
-// so quite simply we can create some keys
-// with publish newsletter
-// and then create an analogue to dispatch_all_emails with 0 days expiry
-// and then just check that we have no more keys left? Better would probably
-// to use the user interface and just store the previously used
-// key and then publish another email and expect to see an email request!
-//
 #[tokio::test]
 pub async fn cleaner_clears_expired_keys_when_called() {
-    // so we will just need to:
-    // - get Test App
-    // - setup Email server
-    // - publish newsletter with a key
-    // - call clear keys
-    // - pubslish newsletter with the same key
-    // - expect that we get 2 email requests
-    //
     let test_app = spawn_app().await;
 
     test_app.create_confirmed_subscriber().await;

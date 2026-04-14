@@ -37,7 +37,6 @@ impl ResponseError for ConfirmSubscriberError {
     }
 }
 
-/// so this will harbour the code for the /subscriptions_confirm end point
 #[instrument(name = "Handling confirmation request", skip(parameters))]
 pub async fn subscriptions_confirm(
     parameters: web::Query<Parameters>,

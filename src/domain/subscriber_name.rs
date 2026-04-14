@@ -3,9 +3,6 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct SubscriberName(String);
 
 impl SubscriberName {
-    /// Returns an instance of SubscriberName if the parsed string is validated as true.
-    /// That is to say that it is non-empty and is no larger than 256 graphemes.
-    /// It panics otherwise.
     pub fn parse(s: String) -> Result<Self, String> {
         let is_empty_or_whitespace = s.trim().is_empty();
 

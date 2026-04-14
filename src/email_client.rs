@@ -3,17 +3,6 @@ use secrecy::{ExposeSecret, SecretString};
 
 use crate::domain::SubscriberEmail;
 
-// ok so in here we will define how to send emails
-// we will have some kind of email client struct
-// that will have:
-// - sender email
-// that will have a send_email method that will
-// take in
-// - html content
-// - text content
-// - email to send to
-// - subject
-//
 pub struct EmailClient {
     client: Client,
     base_url: Url,
@@ -151,9 +140,6 @@ mod test {
             .expect(1)
             .mount(&mock_server)
             .await;
-
-        // so now i want to create an email client and call send
-        //
 
         let email_client = email_client(&mock_server.uri());
         let _ = email_client
