@@ -1,10 +1,21 @@
 use crate::helpers::spawn_app;
 use serde_json::json;
+use wiremock::{
+    Mock, ResponseTemplate,
+    matchers::{method, path},
+};
 
 #[tokio::test]
 pub async fn issues_shows_completed_publications() {
     let test_app = spawn_app().await;
     test_app.create_confirmed_subscriber().await;
+
+    Mock::given(method("POST"))
+        .and(path("/email"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&test_app.email_server)
+        .await;
 
     let login_body = json!( {
         "username": test_app.test_user.username.clone(),
@@ -30,6 +41,7 @@ pub async fn issues_shows_completed_publications() {
 pub async fn issues_shows_in_progress_publications() {
     let test_app = spawn_app().await;
     test_app.create_confirmed_subscriber().await;
+    test_app.create_confirmed_subscriber().await;
 
     let login_body = json!( {
         "username": test_app.test_user.username.clone(),
@@ -46,5 +58,5 @@ pub async fn issues_shows_in_progress_publications() {
     test_app.post_newsletter(&newsletter_body).await;
 
     let issues_html = test_app.get_issues_html().await;
-    assert!(issues_html.contains("Status: In Progress. Tasks left: 2"));
+    assert!(issues_html.contains("Status: In progress, Tasks left: 2"));
 }

@@ -14,6 +14,7 @@ use crate::{
         IndempotencyKey, NextAction, PgTransaction, get_saved_response, initialise_response,
         save_response,
     },
+    issue_delivery_worker::Retries,
     routes::error_chain_fmt,
     utils::see_other,
 };
@@ -57,19 +58,20 @@ impl ResponseError for PublishError {
     }
 }
 
-#[tracing::instrument(name = "Enqueue emails", skip(tx))]
+#[tracing::instrument(name = "Enqueue emails", skip(tx, max_retries))]
 pub async fn enqueue_emails(
     newsletter_id: Uuid,
+    max_retries: &Retries,
     tx: &mut PgTransaction,
 ) -> Result<(), anyhow::Error> {
     sqlx::query!(
         r#"
-            INSERT INTO email_processing_tasks (subscriber_id, newsletter_id)
-            SELECT id, $1
+            INSERT INTO email_processing_tasks (subscriber_id, newsletter_id, retries, execute_after)
+            SELECT id, $1, $2, now()
             FROM subscriptions
             WHERE status='confirmed';
     "#,
-        newsletter_id
+        newsletter_id,max_retries.to_db()
     )
     .execute(&mut **tx)
     .await?;
@@ -107,15 +109,17 @@ pub async fn persist_newsletter_issue(
     Ok(id)
 }
 
-#[tracing::instrument(name = "Publish newsletter", skip(form,pool), fields(newsletter_title=%form.title))]
+#[tracing::instrument(name = "Publish newsletter", skip(form,pool, max_retries), fields(newsletter_title=%form.title))]
 pub async fn publish_newsletter(
     form: web::Form<PublishForm>,
     pool: web::Data<PgPool>,
     user_id: ReqData<UserId>,
+    max_retries: web::Data<Retries>,
 ) -> Result<HttpResponse, PublishError> {
     let mut tx = pool.begin().await.context("Unable to begin transaction")?;
     form.validate_user_inputs()?;
     let user_id = user_id.into_inner();
+    let max_retries: &Retries = max_retries.get_ref();
 
     let PublishForm {
         title,
@@ -140,7 +144,7 @@ pub async fn publish_newsletter(
         NextAction::ProcessEmails => {
             let newsletter_id =
                 persist_newsletter_issue(&user_id, title, text, html, &mut tx).await?;
-            match enqueue_emails(newsletter_id, &mut tx).await {
+            match enqueue_emails(newsletter_id, max_retries, &mut tx).await {
                 Ok(_) => {
                     FlashMessage::info("Newsletter published").send();
                     let response = see_other("/admin/dashboard");

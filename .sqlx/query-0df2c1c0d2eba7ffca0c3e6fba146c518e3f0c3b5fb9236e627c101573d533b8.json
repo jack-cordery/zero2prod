@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO email_processing_tasks (subscriber_id, newsletter_id, retries, execute_after)\n            SELECT id, $1, $2, now()\n            FROM subscriptions\n            WHERE status='confirmed';\n    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0df2c1c0d2eba7ffca0c3e6fba146c518e3f0c3b5fb9236e627c101573d533b8"
+}

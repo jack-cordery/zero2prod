@@ -12,6 +12,7 @@ use crate::{
     authentication::admin_protection,
     configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
+    issue_delivery_worker::Retries,
     routes::{
         change_password, dashboard, health_check, home, issues, login, login_form, logout,
         newsletter_form, password_form, publish_newsletter, subscribe, subscriptions_confirm,
@@ -20,6 +21,8 @@ use crate::{
 
 pub struct ApplicationBaseUrl(pub String);
 
+pub struct MaxRetries(pub Retries);
+
 pub struct HmacSecret(pub SecretString);
 
 pub fn run(
@@ -27,12 +30,14 @@ pub fn run(
     connection_pool: PgPool,
     email_client: EmailClient,
     application_base_url: String,
+    max_retries: Retries,
     valkey_session_store: RedisSessionStore,
     flash_secret: SecretString,
 ) -> Result<Server, std::io::Error> {
     let conn = web::Data::new(connection_pool);
     let email_client = web::Data::new(email_client);
     let application_base_url = web::Data::new(ApplicationBaseUrl(application_base_url));
+    let max_retries = web::Data::new(max_retries);
 
     let cookie_key =
         Key::from(&hex::decode(flash_secret.expose_secret()).expect("Invalid flash secret"));
@@ -72,6 +77,7 @@ pub fn run(
             .app_data(conn.clone())
             .app_data(email_client.clone())
             .app_data(application_base_url.clone())
+            .app_data(max_retries.clone())
     })
     .listen(listener)?
     .run();
@@ -109,6 +115,7 @@ impl Application {
         let listener = TcpListener::bind(application_address)?;
         let port = listener.local_addr().expect("should be valid").port();
         let flash_secret = configuration.application.flash_secret.clone();
+        let max_retries = Retries::from_u8(configuration.application.max_retries);
         let valkey_store = RedisSessionStore::new(configuration.valkey_uri.expose_secret())
             .await
             .expect("Failed to connect to Valkey");
@@ -117,6 +124,7 @@ impl Application {
             connection,
             email_client,
             application_base_url,
+            max_retries,
             valkey_store,
             flash_secret,
         )?;

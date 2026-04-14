@@ -229,6 +229,7 @@ async fn confirmed_resubscription_returns_409() {
     let response = test_app
         .post_subsription("name=jack%20cordery&email=jack%40gmail.com".into())
         .await;
+    dbg!(&response);
     assert_eq!(409, response.status().as_u16());
 }
 

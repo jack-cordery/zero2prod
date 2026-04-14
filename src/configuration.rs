@@ -44,6 +44,7 @@ pub struct ApplicationSettings {
     pub port: u16,
     pub base_url: String,
     pub flash_secret: SecretString,
+    pub max_retries: u8,
 }
 
 #[derive(Deserialize)]

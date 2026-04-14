@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n    SELECT \n       t.subscriber_id,\n       t.newsletter_id,\n       s.email,\n       n.title,\n       n.content_text,\n       n.content_html\n    FROM email_processing_tasks t\n    JOIN subscriptions s ON s.id = t.subscriber_id\n    JOIN newsletters n ON n.id = t.newsletter_id\n    FOR UPDATE OF t \n    SKIP LOCKED LIMIT 1;\n    ",
+  "query": "\n    SELECT \n       t.subscriber_id,\n       t.newsletter_id,\n       s.email,\n       n.title,\n       n.content_text,\n       n.content_html,\n       t.retries\n    FROM email_processing_tasks t\n    JOIN subscriptions s ON s.id = t.subscriber_id\n    JOIN newsletters n ON n.id = t.newsletter_id\n    WHERE t.execute_after < now()\n    FOR UPDATE OF t \n    SKIP LOCKED LIMIT 1;\n    ",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,11 @@
         "ordinal": 5,
         "name": "content_html",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "retries",
+        "type_info": "Int2"
       }
     ],
     "parameters": {
@@ -43,8 +48,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "41afa0ceb5dc1e8f345e6abe871f637cca7af249d16a474e0499425218a36cfe"
+  "hash": "5253c74676df2482bb15bd1fd23cdd573832e8039f86a28bb785db98a53453ea"
 }

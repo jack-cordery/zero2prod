@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    UPDATE email_processing_tasks \n    SET \n      retries=$3,\n      execute_after=$4\n    WHERE newsletter_id = $1 and subscriber_id = $2;\n    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int2",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0b53b6b79d308b6b839be19b27dda3c5fe1697deb89f54b814d3ed2596ac9d1"
+}

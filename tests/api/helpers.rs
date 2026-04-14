@@ -13,7 +13,7 @@ use fake::{
 use linkify::LinkFinder;
 use reqwest::{Client, Response, redirect};
 use serde::Serialize;
-use sqlx::{Connection, Executor, PgConnection, PgPool};
+use sqlx::{Connection, Executor, PgConnection, PgPool, postgres::PgPoolOptions};
 use std::{sync::LazyLock, time::Duration};
 use tokio::time::sleep;
 use url::Url;
@@ -87,6 +87,7 @@ pub struct TestApp {
     pub test_user: TestUser,
     pub client: reqwest::Client,
     pub email_client: EmailClient,
+    pub max_retries: u8,
 }
 
 impl TestApp {
@@ -256,12 +257,18 @@ impl TestApp {
 
     pub async fn dispatch_all_emails(&self) {
         loop {
-            match process_email(&self.connection_pool, &self.email_client).await {
+            match process_email(&self.connection_pool, &self.email_client, &self.max_retries).await
+            {
                 Ok(QueueState::Empty) => {
                     break;
                 }
-                Ok(QueueState::NonEmpty(_)) => (),
-                Err(_) => sleep(Duration::from_secs(1)).await,
+                Ok(QueueState::Waiting(wait_time)) => {
+                    dbg!(&wait_time);
+
+                    sleep(Duration::from_secs_f64(wait_time)).await
+                }
+                Ok(QueueState::Ready(_)) => (),
+                Err(_) => (),
             }
         }
     }
@@ -367,6 +374,7 @@ pub async fn spawn_app() -> TestApp {
         test_user: TestUser::generate(),
         client,
         email_client,
+        max_retries: configuration.application.max_retries,
     };
     test_app.insert_test_user().await;
     test_app
@@ -375,6 +383,7 @@ pub async fn spawn_app() -> TestApp {
 async fn configure_database(db_settings: &DatabaseSettings) -> PgPool {
     let psql_connection_uri_without_db = db_settings.get_connection_uri_without_db_name();
     let psql_connection_uri_with_db = db_settings.get_connection_uri();
+
     let mut connection = PgConnection::connect_with(&psql_connection_uri_without_db)
         .await
         .expect("Failed to connect to Postgres");
@@ -384,7 +393,8 @@ async fn configure_database(db_settings: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failed to create database");
 
-    let connection_pool = PgPool::connect_with(psql_connection_uri_with_db)
+    let connection_pool = PgPoolOptions::new()
+        .connect_with(psql_connection_uri_with_db)
         .await
         .expect("Failed to connect to Postgres");
 
