@@ -45,6 +45,7 @@ pub struct ApplicationSettings {
     pub base_url: String,
     pub flash_secret: SecretString,
     pub max_retries: u8,
+    pub idempotent_expiry: u8,
 }
 
 #[derive(Deserialize)]

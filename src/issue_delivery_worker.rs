@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
@@ -49,7 +50,7 @@ pub struct Task {
     retries: Retries,
 }
 
-pub async fn run_worker_until_stopped(configuration: Settings) -> anyhow::Result<()> {
+pub async fn run_worker_until_stopped(configuration: Arc<Settings>) -> anyhow::Result<()> {
     let pool = get_connection_pool(&configuration.database);
     let sender_email = configuration
         .email_client

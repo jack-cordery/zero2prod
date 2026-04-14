@@ -1,9 +1,12 @@
 use anyhow::Result;
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 use tokio::task::JoinError;
 use zero2prod::{
     configuration::get_configuration,
-    issue_delivery_worker, startup,
+    idempotency, issue_delivery_worker, startup,
     telementry::{get_subscriber, init_subscriber},
 };
 
@@ -11,15 +14,17 @@ use zero2prod::{
 async fn main() -> Result<()> {
     let subscriber = get_subscriber("zero2prod".into(), "info".into(), std::io::stdout);
     init_subscriber(subscriber);
-    let configuration = get_configuration().expect("Failed to get config");
+    let configuration = Arc::new(get_configuration().expect("Failed to get config"));
     let application = startup::Application::build(&configuration).await?;
     let application_task = tokio::spawn(application.run_until_stopped());
     let email_worker = tokio::spawn(issue_delivery_worker::run_worker_until_stopped(
-        configuration,
+        configuration.clone(),
     ));
+    let idempotency_cleaner = tokio::spawn(idempotency::run_until_stopped(configuration.clone()));
     tokio::select!(
     o = application_task => report_exit("API",o),
-    o = email_worker => report_exit("Background worker", o)
+    o = email_worker => report_exit("email worker", o),
+    o = idempotency_cleaner => report_exit("idempotency cleaner", o)
     );
     Ok(())
 }

@@ -1,6 +1,7 @@
 mod admin;
 mod health_check;
 mod helpers;
+mod idempotency;
 mod issues;
 mod login;
 mod newsletter;

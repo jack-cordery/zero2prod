@@ -25,6 +25,7 @@ use wiremock::{
 use zero2prod::{
     configuration::{DatabaseSettings, get_configuration},
     email_client::EmailClient,
+    idempotency::delete_expired_keys,
     issue_delivery_worker::{QueueState, process_email},
     startup::{Application, get_connection_pool},
     telementry::{get_subscriber, init_subscriber},
@@ -269,6 +270,12 @@ impl TestApp {
                 Err(_) => (),
             }
         }
+    }
+
+    pub async fn clean_idempotency_keys(&self) {
+        delete_expired_keys(0, &self.connection_pool)
+            .await
+            .expect("Failed to run key deletion");
     }
     pub async fn create_unconfirmed_subscriber(&self) -> ConfirmationLinks {
         let _mock_guard = Mock::given(method("POST"))
