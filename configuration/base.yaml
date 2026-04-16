@@ -9,6 +9,9 @@ application:
   flash_secret: "865f3fd4b37364a98c2b44abccc3b128934da3c9ecc09482915eb80b0698dcf0d796783b5aa4aa2bc75e9601d1d91b592f331e24ca61353f575337a2f1f239b5"
   max_retries: 5
   idempotent_expiry: 7
+  rate_limit:
+    rate_limit: 10
+    namespace: "prod"
 email_client: 
   authorization_token: "my-secret-token"
   timeout_millis: 10000

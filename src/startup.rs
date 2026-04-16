@@ -10,9 +10,10 @@ use url::Url;
 
 use crate::{
     authentication::admin_protection,
-    configuration::{DatabaseSettings, Settings},
+    configuration::{DatabaseSettings, RateLimitSettings, Settings},
     email_client::EmailClient,
     issue_delivery_worker::Retries,
+    rate_limit::rate_limit_protection,
     routes::{
         change_password, dashboard, health_check, home, issues, login, login_form, logout,
         newsletter_form, password_form, publish_newsletter, subscribe, subscriptions_confirm,
@@ -25,19 +26,24 @@ pub struct MaxRetries(pub Retries);
 
 pub struct HmacSecret(pub SecretString);
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     listener: TcpListener,
     connection_pool: PgPool,
+    redis_client: redis::Client,
     email_client: EmailClient,
     application_base_url: String,
     max_retries: Retries,
+    rate_limit: RateLimitSettings,
     valkey_session_store: RedisSessionStore,
     flash_secret: SecretString,
 ) -> Result<Server, std::io::Error> {
     let conn = web::Data::new(connection_pool);
+    let redis_conn = web::Data::new(redis_client);
     let email_client = web::Data::new(email_client);
     let application_base_url = web::Data::new(ApplicationBaseUrl(application_base_url));
     let max_retries = web::Data::new(max_retries);
+    let rate_limit = web::Data::new(rate_limit);
 
     let cookie_key =
         Key::from(&hex::decode(flash_secret.expose_secret()).expect("Invalid flash secret"));
@@ -49,6 +55,7 @@ pub fn run(
         App::new()
             .wrap(TracingLogger::default())
             .wrap(flash_framework.clone())
+            .wrap(from_fn(rate_limit_protection))
             .wrap(SessionMiddleware::new(
                 valkey_session_store.clone(),
                 cookie_key.clone(),
@@ -78,6 +85,8 @@ pub fn run(
             .app_data(email_client.clone())
             .app_data(application_base_url.clone())
             .app_data(max_retries.clone())
+            .app_data(redis_conn.clone())
+            .app_data(rate_limit.clone())
     })
     .listen(listener)?
     .run();
@@ -92,6 +101,9 @@ pub struct Application {
 impl Application {
     pub async fn build(configuration: &Settings) -> Result<Self, std::io::Error> {
         let connection = get_connection_pool(&configuration.database);
+
+        let redis_client = redis::Client::open(configuration.valkey_uri.expose_secret())
+            .expect("Failed to get redis client");
 
         let sender_email = configuration
             .email_client
@@ -116,15 +128,18 @@ impl Application {
         let port = listener.local_addr().expect("should be valid").port();
         let flash_secret = configuration.application.flash_secret.clone();
         let max_retries = Retries::from_u8(configuration.application.max_retries);
+        let rate_limit = configuration.application.rate_limit.clone();
         let valkey_store = RedisSessionStore::new(configuration.valkey_uri.expose_secret())
             .await
             .expect("Failed to connect to Valkey");
         let server = run(
             listener,
             connection,
+            redis_client,
             email_client,
             application_base_url,
             max_retries,
+            rate_limit,
             valkey_store,
             flash_secret,
         )?;

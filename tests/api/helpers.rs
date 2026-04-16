@@ -23,7 +23,7 @@ use wiremock::{
     matchers::{method, path},
 };
 use zero2prod::{
-    configuration::{DatabaseSettings, get_configuration},
+    configuration::{DatabaseSettings, RateLimitSettings, get_configuration},
     email_client::EmailClient,
     idempotency::delete_expired_keys,
     issue_delivery_worker::{QueueState, process_email},
@@ -329,6 +329,14 @@ pub fn assert_redirect_to(response: &Response, location: &str) {
 }
 
 pub async fn spawn_app() -> TestApp {
+    spawn_app_with_config(RateLimitSettings {
+        rate_limit: 100,
+        namespace: "prod".into(),
+    })
+    .await
+}
+
+pub async fn spawn_app_with_config(rate_limit_settings: RateLimitSettings) -> TestApp {
     LazyLock::force(&TRACING);
 
     let email_server = MockServer::start().await;
@@ -338,6 +346,8 @@ pub async fn spawn_app() -> TestApp {
         c.database.database_name = Uuid::new_v4().to_string();
         c.application.port = 0;
         c.email_client.base_url = email_server.uri();
+        c.application.rate_limit.rate_limit = rate_limit_settings.rate_limit;
+        c.application.rate_limit.namespace = rate_limit_settings.namespace;
         c
     };
 

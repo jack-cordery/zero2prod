@@ -46,6 +46,7 @@ pub struct ApplicationSettings {
     pub flash_secret: SecretString,
     pub max_retries: u8,
     pub idempotent_expiry: u8,
+    pub rate_limit: RateLimitSettings,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +80,12 @@ impl DatabaseSettings {
             .port(self.port)
             .ssl_mode(ssl_mode)
     }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct RateLimitSettings {
+    pub rate_limit: u16,
+    pub namespace: String,
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
