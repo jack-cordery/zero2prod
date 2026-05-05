@@ -6,3 +6,9 @@ database:
 email_client:
   base_url: "http://localhost"
   sender_email: "test@gmail.com"
+oidc: 
+  client_id: "some_client_id"
+  client_secret: "very_secret12345"
+  issuer_url: "https://accounts.google.com"
+  redirect_uri: "http://localhost/login/callback"
+  timeout_millis: 10000

@@ -16,6 +16,7 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub email_client: EmailClientSettings,
+    pub oidc: OidcSettings,
     pub valkey_uri: SecretString,
 }
 
@@ -32,6 +33,21 @@ impl EmailClientSettings {
         SubscriberEmail::parse(self.sender_email.clone())
     }
 
+    pub fn timeout(&self) -> std::time::Duration {
+        Duration::from_millis(self.timeout_millis)
+    }
+}
+
+#[derive(Deserialize)]
+pub struct OidcSettings {
+    pub client_id: String,
+    pub client_secret: SecretString,
+    pub issuer_url: String,
+    pub redirect_uri: String,
+    pub timeout_millis: u64,
+}
+
+impl OidcSettings {
     pub fn timeout(&self) -> std::time::Duration {
         Duration::from_millis(self.timeout_millis)
     }

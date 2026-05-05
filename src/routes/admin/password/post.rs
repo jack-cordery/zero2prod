@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use sqlx::PgPool;
 use tracing::instrument;
 
-use crate::routes::error_chain_fmt;
+use crate::routes::{REDIRECT_SUCCESSFUL_LOGIN, error_chain_fmt};
 use crate::{
     authentication::{
         AuthError, Credentials, UserId, get_user, update_password, validate_credentials,
@@ -75,13 +75,15 @@ pub async fn change_password(
         })?;
 
     FlashMessage::info("Password successfully changed").send();
-    let response = see_other("/admin/dashboard");
+    let response = see_other(REDIRECT_SUCCESSFUL_LOGIN);
     Ok(response)
 }
 
+const REDIRECT_ADMIN_PASSWORD: &str = "/admin/password";
+
 pub fn error_redirect(e: PasswordError) -> InternalError<PasswordError> {
     FlashMessage::error(e.to_string()).send();
-    let response = see_other("/admin/password");
+    let response = see_other(REDIRECT_ADMIN_PASSWORD);
 
     InternalError::from_response(e, response)
 }

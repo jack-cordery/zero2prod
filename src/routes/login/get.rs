@@ -47,6 +47,11 @@ pub async fn login_form(flash_messages: IncomingFlashMessages) -> HttpResponse {
 			Login
 		</button>
 	</form>
+	<a href="/login/google">
+		<button>
+			Login with Google
+		</button>
+	</a>
         </body>
 </html>
 

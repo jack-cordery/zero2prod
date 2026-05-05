@@ -5,6 +5,7 @@ mod idempotency;
 mod issues;
 mod login;
 mod newsletter;
+mod oidc;
 mod rate_limit;
 mod subscriptions;
 mod subscriptions_confirm;

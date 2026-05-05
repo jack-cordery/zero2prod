@@ -3,6 +3,7 @@ use std::net::TcpListener;
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 use actix_web::{App, HttpServer, cookie::Key, dev::Server, middleware::from_fn, web};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
+use openidconnect::{ClientId, ClientSecret, IssuerUrl, RedirectUrl};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, Pool, Postgres, postgres::PgPoolOptions};
 use tracing_actix_web::TracingLogger;
@@ -13,10 +14,12 @@ use crate::{
     configuration::{DatabaseSettings, RateLimitSettings, Settings},
     email_client::EmailClient,
     issue_delivery_worker::Retries,
+    oidc::{OidcClient, OidcHttpClient},
     rate_limit::rate_limit_protection,
     routes::{
-        change_password, dashboard, health_check, home, issues, login, login_form, logout,
-        newsletter_form, password_form, publish_newsletter, subscribe, subscriptions_confirm,
+        callback, change_password, dashboard, health_check, home, initiate_google_login, issues,
+        login, login_form, logout, newsletter_form, password_form, publish_newsletter, subscribe,
+        subscriptions_confirm,
     },
 };
 
@@ -32,6 +35,8 @@ pub fn run(
     connection_pool: PgPool,
     redis_client: redis::Client,
     email_client: EmailClient,
+    oidc_client: OidcClient,
+    oidc_http_client: OidcHttpClient,
     application_base_url: String,
     max_retries: Retries,
     rate_limit: RateLimitSettings,
@@ -41,6 +46,8 @@ pub fn run(
     let conn = web::Data::new(connection_pool);
     let redis_conn = web::Data::new(redis_client);
     let email_client = web::Data::new(email_client);
+    let oidc_client = web::Data::new(oidc_client);
+    let oidc_http_client = web::Data::new(oidc_http_client);
     let application_base_url = web::Data::new(ApplicationBaseUrl(application_base_url));
     let max_retries = web::Data::new(max_retries);
     let rate_limit = web::Data::new(rate_limit);
@@ -70,6 +77,8 @@ pub fn run(
             .route("/newsletter", web::post().to(publish_newsletter))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
+            .route("/login/google", web::get().to(initiate_google_login))
+            .route("/login/callback", web::get().to(callback))
             .service(
                 web::scope("/admin")
                     .wrap(from_fn(admin_protection))
@@ -83,6 +92,8 @@ pub fn run(
             )
             .app_data(conn.clone())
             .app_data(email_client.clone())
+            .app_data(oidc_client.clone())
+            .app_data(oidc_http_client.clone())
             .app_data(application_base_url.clone())
             .app_data(max_retries.clone())
             .app_data(redis_conn.clone())
@@ -119,6 +130,25 @@ impl Application {
             timeout,
         );
 
+        let timeout = configuration.oidc.timeout();
+        let oidc_http_client = OidcHttpClient::new(timeout);
+        let client_id = ClientId::new(configuration.oidc.client_id.to_owned());
+        let client_secret =
+            ClientSecret::new(configuration.oidc.client_secret.expose_secret().to_owned());
+        let issuer_url =
+            IssuerUrl::new(configuration.oidc.issuer_url.to_owned()).expect("Invalid issuer url");
+        let redirect_url = RedirectUrl::new(configuration.oidc.redirect_uri.to_owned())
+            .expect("Invalid redirect url");
+
+        let oidc_client = OidcClient::new(
+            client_id,
+            client_secret,
+            issuer_url,
+            &oidc_http_client,
+            redirect_url,
+        )
+        .await;
+
         let application_address = format!(
             "{}:{}",
             configuration.application.host, configuration.application.port
@@ -137,6 +167,8 @@ impl Application {
             connection,
             redis_client,
             email_client,
+            oidc_client,
+            oidc_http_client,
             application_base_url,
             max_retries,
             rate_limit,

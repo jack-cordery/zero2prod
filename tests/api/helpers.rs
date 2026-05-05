@@ -2,6 +2,7 @@ use argon2::{
     Argon2, Params, PasswordHasher,
     password_hash::{SaltString, rand_core::OsRng},
 };
+use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use fake::{
     Fake,
     faker::{
@@ -10,9 +11,12 @@ use fake::{
     },
     locales::EN,
 };
+use jsonwebtoken::{EncodingKey, Header, encode};
 use linkify::LinkFinder;
 use reqwest::{Client, Response, redirect};
+use rsa::{RsaPrivateKey, pkcs8::DecodePrivateKey, traits::PublicKeyParts};
 use serde::Serialize;
+use serde_json::json;
 use sqlx::{Connection, Executor, PgConnection, PgPool, postgres::PgPoolOptions};
 use std::{sync::LazyLock, time::Duration};
 use tokio::time::sleep;
@@ -27,6 +31,7 @@ use zero2prod::{
     email_client::EmailClient,
     idempotency::delete_expired_keys,
     issue_delivery_worker::{QueueState, process_email},
+    routes::CallbackQuery,
     startup::{Application, get_connection_pool},
     telementry::{get_subscriber, init_subscriber},
 };
@@ -84,6 +89,7 @@ pub struct TestApp {
     pub address: String,
     pub connection_pool: PgPool,
     pub email_server: MockServer,
+    pub oidc_server: MockServer,
     pub port: u16,
     pub test_user: TestUser,
     pub client: reqwest::Client,
@@ -186,6 +192,26 @@ impl TestApp {
             .text()
             .await
             .unwrap()
+    }
+    pub async fn get_google_login(&self) -> Response {
+        self.client
+            .get(format!("{}/login/google", self.address))
+            .send()
+            .await
+            .expect("Failed to execute get request")
+    }
+
+    pub async fn get_google_callback(&self, query: CallbackQuery) -> Response {
+        let url = format!(
+            "{}/login/callback?{}",
+            self.address,
+            serde_urlencoded::to_string(query).expect("invalid query")
+        );
+        self.client
+            .get(url)
+            .send()
+            .await
+            .expect("Failed to execute get request")
     }
 
     pub async fn get_admin_dashboard(&self) -> Response {
@@ -318,14 +344,13 @@ impl TestApp {
 }
 
 pub fn assert_redirect_to(response: &Response, location: &str) {
+    let response_location = response
+        .headers()
+        .get("LOCATION")
+        .map(|h| h.to_str().expect("invalid string"))
+        .expect("no location found");
     assert_eq!(303, response.status().as_u16());
-    assert_eq!(
-        Some(location),
-        response
-            .headers()
-            .get("LOCATION")
-            .map(|h| h.to_str().expect("invalid string"))
-    );
+    assert_eq!(location, response_location);
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -336,16 +361,188 @@ pub async fn spawn_app() -> TestApp {
     .await
 }
 
+pub const PRIVATE_KEY: &str = r#"
+-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDeOCq8BojmNcL7
+s/waQL4E2JajDP2DQ1sP6ceiJv56esmtNT1Wa+jfg5HnsX9l/WWdTq6+cksxO2Xq
+ftbrtneNrriO7/zeoIED7BRZ2ezGl8VZxKFRU0UTL2OWkNU5+GOE9+LRAE3oyxLL
+Za3ou1/ccld04qRKYYLNhFEirVTNr3+W0E+pbe27Vg60Zh4BdG228e2wYSzTnHQG
+tJFgIj24vp2DBVAmV5SQGTo+NKhpZBBt25n29Attx0bOETIsJejgfEAiGXjY6U4F
+1mnLTzCIBkbEtHWPHCfE2Kuj515Xccmufg5JHdo3h8vickmh1FR9KtDvtZfxq5kj
+qA68h6C3AgMBAAECggEABfZu2x23xamSoktZi+DJ2HpxTE24bbG8e0hUFXtDX8j0
+qWOg0jVSCdFPdG6UUwnCFL78PFr3vonv+aNOpAOA4Lnb9OXmnJik7ZSDlUeeLVP8
+NSTsCTEZTOL8IpmfRw9tqC84lFAURxdP2UpQqMqCT3l39EhyjRZhup7+yFXrTRuI
+F/yj52FkApvrERQulSpIgMl0NNEwYN0W7xprpnx9iEOsS9U+IC8GRAOqTxPPFFTm
+7EPgFkOT0+kPjBsyNeGtiPcQFNBVQ9AO0mb4Mtca0aII3P/kmr5LGTQzeSeETHun
+adYRBVDhDwpgx3O9A/HcegsamyK48ad/S24x88D9zQKBgQD88oyayQyiANOp1JJR
+eBTSmGjwz5eCZDfGztYW4hcn1399wSXmpi5USlNszvxwhbmooccuUXqbKPzS34f3
+D26w6gWuy8nztk/IW9knxXY4eoTjFnTt1B1v421CeQgwYosPiScRaLWYN2JXW+HB
+Yt8u7mbfahP4zR0jRKLgmjq8vQKBgQDg5q/jKt+Z54DppHfFD8MVnQyXhBHFgU3Z
+qhi+7Yk6BOIpzSY9+7xK94jCC0NCbF3d6O8HP+jK90lUrkzqTgKj9hXATeEo9nFA
+Aq1SEG48le8VWri1kV/XnfkbFejwqwbqQtKINmLRHbU9hYsBRJSRFNThsRyNG+cy
+snmDvdv8gwKBgG3KYZk1ttQCg9ztNW1DL9aQ7MvJbzvbgBI86NQZ4m8arG3LDkZk
+zysq77cEyLGWeZVmUuwZ1ZvPWJ23BG8KNcN4cGsEbW3pLgwLQeBvZvbwxwlCUBKC
+xRwxnNUDb7iArVda8qgtyNR/BaJhcUXdQn4+YEyM4IpXjVQnkILorqIJAoGAa2sD
+e1cQ8Wt3USDy67Z5kSsvxnaYHmOCEYKCyz6dGo8WjqyjpVtFNfFA6p2ChIlJ1CHb
+ePT3dWnjJoURy59y92kkPnN0JaJ/uPkOW3HplRpv1R09t8s1ocCcKGmwlrK5XM6J
+y/FeBU9RL49HM1XUN+9hNmLnpiY7qSVBkMDv/40CgYB1zUtBUJA0qVb6rbpZnAFI
++pAquJuEot0ZGQg/uDMSuo7OgWiBmE2hDCxJC8T6MTUb7jRySStr3k8Enfu+MAmD
+NlhiCmNT1YpwYyC0m8GTwEIjlGF8WkxV0n+3wC96KtGFNbSPGDoCMd04UlyG7OAr
+tC4uQIqx+L6rP9v0AYeEDA==
+-----END PRIVATE KEY-----
+"#;
+
+pub fn make_test_jwt(payload: serde_json::Value) -> String {
+    encode(
+        &Header::new(jsonwebtoken::Algorithm::RS256),
+        &payload,
+        &EncodingKey::from_rsa_pem(PRIVATE_KEY.as_bytes()).unwrap(),
+    )
+    .unwrap()
+}
+
+pub fn get_callback_query_from_login_response(response: Response) -> (CallbackQuery, String) {
+    let location = response
+        .headers()
+        .get("LOCATION")
+        .map(|h| h.to_str().expect("Invalid str"))
+        .expect("No location found");
+    let location = Url::parse(location).expect("Invalid url");
+    let query_pairs = location.query_pairs();
+
+    let mut nonce: Option<String> = None;
+    let mut state: Option<String> = None;
+
+    for (key, value) in query_pairs {
+        match key.as_ref() {
+            "nonce" => nonce = Some(value.to_string()),
+            "state" => state = Some(value.to_string()),
+            _ => {}
+        }
+    }
+
+    let nonce = nonce.unwrap();
+    let csrf = state.unwrap();
+
+    let state = format!("url=some_url.com&security_token={csrf}");
+
+    (
+        CallbackQuery::new(state, "some_code_to_exchange".into(), "some_scope".into()),
+        nonce,
+    )
+}
+
+async fn mount_openidconnect_end_points(oidc_uri: String, mock_server: &MockServer) {
+    let private = RsaPrivateKey::from_pkcs8_pem(PRIVATE_KEY).unwrap();
+    let public = private.to_public_key();
+
+    let n = BASE64_URL_SAFE_NO_PAD.encode(public.n().to_bytes_be());
+    let e = BASE64_URL_SAFE_NO_PAD.encode(public.e().to_bytes_be());
+
+    Mock::given(method("GET"))
+        .and(path("/certs"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+          "keys": [
+            {
+              "kty": "RSA",
+              "kid": "test-key",
+              "use": "sig",
+              "alg": "RS256",
+              "n": n,
+              "e": e
+            }
+          ]
+        })))
+        .mount(mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/.well-known/openid-configuration"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!(
+        {
+         "issuer": oidc_uri,
+         "authorization_endpoint": format!("{oidc_uri}/auth"),
+         "device_authorization_endpoint": format!("{oidc_uri}/auth"),
+         "token_endpoint": format!("{oidc_uri}/token"),
+         "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
+         "revocation_endpoint": "https://oauth2.googleapis.com/revoke",
+         "jwks_uri": format!("{oidc_uri}/certs"),
+         "response_types_supported": [
+          "code",
+          "token",
+          "id_token",
+          "code token",
+          "code id_token",
+          "token id_token",
+          "code token id_token",
+          "none"
+         ],
+         "response_modes_supported": [
+          "query",
+          "fragment",
+          "form_post"
+         ],
+         "subject_types_supported": [
+          "public"
+         ],
+         "id_token_signing_alg_values_supported": [
+          "RS256"
+         ],
+         "scopes_supported": [
+          "openid",
+          "email",
+          "profile"
+         ],
+         "token_endpoint_auth_methods_supported": [
+          "client_secret_post",
+          "client_secret_basic"
+         ],
+         "claims_supported": [
+          "aud",
+          "email",
+          "email_verified",
+          "exp",
+          "family_name",
+          "given_name",
+          "iat",
+          "iss",
+          "name",
+          "picture",
+          "sub"
+         ],
+         "code_challenge_methods_supported": [
+          "plain",
+          "S256"
+         ],
+         "grant_types_supported": [
+          "authorization_code",
+          "refresh_token",
+          "urn:ietf:params:oauth:grant-type:device_code",
+          "urn:ietf:params:oauth:grant-type:jwt-bearer"
+         ],
+         "authorization_response_iss_parameter_supported": true
+        }
+
+                      )))
+        .expect(1)
+        .mount(mock_server)
+        .await;
+}
+
 pub async fn spawn_app_with_config(rate_limit_settings: RateLimitSettings) -> TestApp {
     LazyLock::force(&TRACING);
 
     let email_server = MockServer::start().await;
+
+    let oidc_server = MockServer::start().await;
+    mount_openidconnect_end_points(oidc_server.uri(), &oidc_server).await;
 
     let configuration = {
         let mut c = get_configuration().expect("Failed to read configuration");
         c.database.database_name = Uuid::new_v4().to_string();
         c.application.port = 0;
         c.email_client.base_url = email_server.uri();
+        c.oidc.issuer_url = oidc_server.uri();
         c.application.rate_limit.rate_limit = rate_limit_settings.rate_limit;
         c.application.rate_limit.namespace = rate_limit_settings.namespace;
         c
@@ -385,6 +582,7 @@ pub async fn spawn_app_with_config(rate_limit_settings: RateLimitSettings) -> Te
         address,
         connection_pool,
         email_server,
+        oidc_server,
         port,
         test_user: TestUser::generate(),
         client,
