@@ -15,7 +15,7 @@ use crate::{
         save_response,
     },
     issue_delivery_worker::Retries,
-    routes::error_chain_fmt,
+    routes::{REDIRECT_SUCCESSFUL_LOGIN, error_chain_fmt},
     utils::see_other,
 };
 
@@ -37,6 +37,8 @@ impl PublishForm {
     }
 }
 
+const REDIRECT_ADMIN_NEWSLETTER: &str = "/admin/newsletter";
+
 #[derive(thiserror::Error)]
 pub enum PublishError {
     #[error("Invalid form details provided.")]
@@ -54,7 +56,7 @@ impl std::fmt::Debug for PublishError {
 impl ResponseError for PublishError {
     fn error_response(&self) -> HttpResponse<BoxBody> {
         FlashMessage::error(self.to_string()).send();
-        see_other("/admin/newsletter")
+        see_other(REDIRECT_ADMIN_NEWSLETTER)
     }
 }
 
@@ -147,7 +149,7 @@ pub async fn publish_newsletter(
             match enqueue_emails(newsletter_id, max_retries, &mut tx).await {
                 Ok(_) => {
                     FlashMessage::info("Newsletter published").send();
-                    let response = see_other("/admin/dashboard");
+                    let response = see_other(REDIRECT_SUCCESSFUL_LOGIN);
                     let response =
                         save_response(&user_id, &idempotency_key, response, &mut tx).await?;
                     tx.commit().await.context(
@@ -157,7 +159,7 @@ pub async fn publish_newsletter(
                 }
                 Err(e) => {
                     FlashMessage::info(e.to_string()).send();
-                    let response = see_other("/admin/newsletter");
+                    let response = see_other(REDIRECT_ADMIN_NEWSLETTER);
                     Ok(response)
                 }
             }

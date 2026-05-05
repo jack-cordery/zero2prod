@@ -146,3 +146,14 @@ pub async fn get_user(user_id: Uuid, pool: &PgPool) -> Result<String, anyhow::Er
         .username;
     Ok(username)
 }
+
+#[instrument(name = "Get user_id from email", skip(pool))]
+pub async fn authorize_email(email: String, pool: &PgPool) -> Result<Uuid, AuthError> {
+    let user_id = sqlx::query!("SELECT user_id FROM users WHERE username=$1", email)
+        .fetch_one(pool)
+        .await
+        .context("Failed to query database")
+        .map_err(AuthError::InvalidCredentialsError)?
+        .user_id;
+    Ok(user_id)
+}

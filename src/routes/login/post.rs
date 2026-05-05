@@ -28,6 +28,9 @@ impl From<LoginForm> for Credentials {
     }
 }
 
+pub const REDIRECT_SUCCESSFUL_LOGIN: &str = "/admin/dashboard";
+pub const REDIRECT_FAILED_LOGIN: &str = "/login";
+
 #[instrument(name="Handling post login request", skip(form, pool, session), fields(username=Empty, user_id=Empty))]
 pub async fn login(
     form: actix_web::web::Form<LoginForm>,
@@ -46,7 +49,7 @@ pub async fn login(
                     let e = LoginError::UnexpectedError(e);
                     login_redirect(e)
                 })?;
-            Ok(see_other("/admin/dashboard"))
+            Ok(see_other(REDIRECT_SUCCESSFUL_LOGIN))
         }
         Err(e) => {
             let e = match e {
@@ -60,7 +63,7 @@ pub async fn login(
 
 pub fn login_redirect(e: LoginError) -> InternalError<LoginError> {
     FlashMessage::error(e.to_string()).send();
-    let response = see_other("/login");
+    let response = see_other(REDIRECT_FAILED_LOGIN);
     InternalError::from_response(e, response)
 }
 
