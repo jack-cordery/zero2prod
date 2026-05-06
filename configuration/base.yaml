@@ -16,3 +16,6 @@ email_client:
   authorization_token: "my-secret-token"
   timeout_millis: 10000
 valkey_uri: "redis://127.0.0.1:6379"
+oidc:
+  issuer_url: "https://accounts.google.com"
+  timeout_millis: 10000
