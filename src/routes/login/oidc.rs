@@ -3,6 +3,7 @@ use anyhow::Context;
 use openidconnect::{AuthorizationCode, CsrfToken};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use tracing::instrument;
 
 use crate::{
     oidc::{OidcClient, OidcHttpClient},
@@ -42,6 +43,7 @@ impl State {
     }
 }
 
+#[instrument(name = "initiating google login", skip_all)]
 pub async fn initiate_google_login(
     client: web::Data<OidcClient>,
     redis_client: web::Data<redis::Client>,
@@ -62,6 +64,7 @@ pub async fn initiate_google_login(
     Ok(see_other(authorize_url.as_str()))
 }
 
+#[instrument(name = "Handling callback", skip_all)]
 pub async fn callback(
     query: web::Query<CallbackQuery>,
     openid_client: web::Data<OidcClient>,
@@ -101,10 +104,7 @@ pub async fn callback(
             &mut redis_conn,
         )
         .await
-        .map_err(login_redirect)
-        .inspect_err(|e| {
-            dbg!(e);
-        })?;
+        .map_err(login_redirect)?;
 
     Ok(see_other(REDIRECT_SUCCESSFUL_LOGIN))
 }
