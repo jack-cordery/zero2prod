@@ -4,7 +4,6 @@ mod post;
 
 pub use get::login_form;
 pub use oidc::CallbackQuery;
-pub use oidc::State;
 pub use oidc::callback;
 pub use oidc::initiate_google_login;
 pub use post::LoginError;

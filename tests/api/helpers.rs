@@ -424,10 +424,8 @@ pub fn get_callback_query_from_login_response(response: Response) -> (CallbackQu
     let nonce = nonce.unwrap();
     let csrf = state.unwrap();
 
-    let state = format!("url=some_url.com&security_token={csrf}");
-
     (
-        CallbackQuery::new(state, "some_code_to_exchange".into(), "some_scope".into()),
+        CallbackQuery::new(csrf, "some_code_to_exchange".into(), "some_scope".into()),
         nonce,
     )
 }

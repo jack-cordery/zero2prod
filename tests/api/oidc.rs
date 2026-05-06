@@ -35,6 +35,8 @@ async fn user_is_logged_in_if_they_successfully_auth_with_google() {
     let initiate_login_response = test_app.get_google_login().await;
     let (callback_query, nonce) = get_callback_query_from_login_response(initiate_login_response);
 
+    dbg!(&callback_query);
+
     let claims = json!( {
         "iss": test_app.oidc_server.uri(),
         "sub": "12345",

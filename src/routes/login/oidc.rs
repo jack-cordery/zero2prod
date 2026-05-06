@@ -28,21 +28,6 @@ impl CallbackQuery {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct State {
-    security_token: String,
-    url: String,
-}
-
-impl State {
-    pub fn new(security_token: String, url: String) -> Self {
-        Self {
-            security_token,
-            url,
-        }
-    }
-}
-
 #[instrument(name = "initiating google login", skip_all)]
 pub async fn initiate_google_login(
     client: web::Data<OidcClient>,
@@ -84,15 +69,9 @@ pub async fn callback(
             login_redirect(error)
         })?;
 
-    let state: State = serde_urlencoded::from_str(&query.state)
-        .context("misformed state")
-        .map_err(|e| {
-            let error = LoginError::UnexpectedError(e);
-            login_redirect(error)
-        })?;
     let access_code = AuthorizationCode::new(query.code.clone());
 
-    let security_token = CsrfToken::new(state.security_token);
+    let security_token = CsrfToken::new(query.state.clone());
 
     openid_client
         .handle_callback(
